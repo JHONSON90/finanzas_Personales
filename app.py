@@ -29,10 +29,9 @@ else:
     gastos = st.Page("pages/gastos_info.py", title="Gastos Generales")
     solo_lectura = st.Page("pages/solo_lectura_info.py", title="Solo Lectura")
 
-    admon_pages = [gastos, solo_lectura]
+    admon_pages = [gastos]
     user_pages = [solo_lectura]
 
     page_dict = admon_pages if st.session_state.role == "admin" else user_pages
     pg = st.navigation(page_dict)
-
-pg.run()
+    pg.run()
