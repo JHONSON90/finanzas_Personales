@@ -23,15 +23,15 @@ except Exception as e:
     placeholder.error(f"Traceback: {traceback.format_exc()}")
     placeholder.empty()
 
-@st.dialog("Agregar Gasto")
+@st.dialog("🛒 Agregar Gasto")
 def agregar_gasto():
-    Fecha = st.date_input("Fecha")
-    Pago_realizado = st.radio("Quien paga", ["Edison", "Diana"])
-    Tipo = st.radio("Tipo", ["Casa", "Personal"])
-    Concepto = st.text_input("Concepto")
-    Categoría = st.selectbox("Categoría", ["Alimentos", "Alimentacion (Snacks)", "Arriendo", "Aseo", "Casa",  "Compras", "Educación", "Entretenimiento","Salud", "Servicios", "Transporte", "Otros"])
-    Monto = st.number_input("Monto", min_value=0.0, format="%.2f")
-    Pago = st.toggle("Se te debe devolver?", value=False)
+    Fecha = st.date_input("🗓️ Fecha de la Compra")
+    Pago_realizado = st.radio("👤 ¿Quién pagó?", ["Edison", "Diana"])
+    Tipo = st.radio("🏠 Tipo de Gasto", ["Casa", "Personal"])
+    Concepto = st.text_input("📜 Concepto")
+    Categoría = st.selectbox("🏷️ Categoría", ["Alimentos", "Alimentacion (Snacks)", "Arriendo", "Aseo", "Casa",  "Compras", "Educación", "Entretenimiento","Salud", "Servicios", "Transporte", "Otros"])
+    Monto = st.number_input("💰 Monto", min_value=0.0, format="%.2f")
+    Pago = st.toggle("🔄 ¿Hay que devolver el dinero?", value=False)
     
     if st.button("Agregar Gasto"):
         df = conn.read(worksheet="Gastos", ttl=0)
@@ -183,7 +183,7 @@ data3.metric(f"Clasificación mas alta,  {para_metrica3["CLASIFICACION"]}", f"{p
 st.write(df.groupby("CONCEPTO")["VALOR"].sum().reset_index().sort_values(by="VALOR", ascending=False))
 
 
-
+#todo: agregar funcionalidade para analizar el comportamiento de productos y mirar cuanto se debe devolver y mirar si se puede hacer una tabla para devolver y cambiar el estado de pago
 
 
 
