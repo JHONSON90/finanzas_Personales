@@ -22,18 +22,20 @@ logout_page = st.Page(logout, title="Logout", icon=":material/logout:")
 
 gastos = st.Page("pages/gastos_info.py", title="Gastos Generales")
 solo_lectura = st.Page("pages/solo_lectura_info.py", title="Solo Lectura")
+gastos_flia = st.Page("pages/gatos_flia_Portilla.py", title="Gastos Familia Portilla")
 
 if st.user.is_logged_in:
     if st.user.email in ADMIN_EMAILS:
         st.sidebar.header(f"Bienvenido, {st.user.name}!")
         st.sidebar.button("Cerrar sesión", on_click=st.logout)
+
         logout_page = st.Page(logout, title="Logout", icon=":material/logout:")
-        pages = [gastos, logout_page]
+        pages = [gastos, gastos_flia, logout_page]
     else:
         st.sidebar.header(f"Bienvenido, {st.user.name}!")
         st.sidebar.button("Cerrar sesión", on_click=st.logout)
         logout_page = st.Page(logout, title="Logout", icon=":material/logout:")
-        pages = [solo_lectura, logout_page]
+        pages = [gastos_flia, logout_page]
     pg = st.navigation(pages)
 else:
     pg = st.navigation([login_page])
@@ -52,8 +54,6 @@ pg.run()
 
 #     st.sidebar.header(f"Bienvenido, {st.user.name}!")
 #     st.sidebar.button("Cerrar sesión", on_click=st.logout)
-
-    
 
 #     # admon_pages = [gastos]
 #     # user_pages = [solo_lectura]
