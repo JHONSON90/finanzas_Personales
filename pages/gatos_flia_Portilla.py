@@ -128,6 +128,25 @@ def seguimiento_productos():
             time.sleep(2)
             st.rerun()
 
+filtro1, filtro2, filtro3 = st.columns(3, vertical_alignment="center")
+with filtro1:
+    st.multiselect("Filtrar por Quien Paga", options=df["QUIEN PAGA"].unique(), key="quien_paga")
+
+with filtro2:
+    st.multiselect("Filtrar por Mes", options=df["MES"].unique(), key="meses")
+
+with filtro3:
+    st.multiselect("Filtrar por Tipo", options=df["TIPO"].unique(), key="tipos")
+
+if st.session_state.quien_paga:
+    df = df[df["QUIEN PAGA"].isin(st.session_state.quien_paga)]
+
+if st.session_state.meses:
+    df = df[df["MES"].isin(st.session_state.meses)]
+
+if st.session_state.tipos:
+    df = df[df["TIPO"].isin(st.session_state.tipos)]
+
 col1, col2 = st.columns(2)
 with col1:
     if st.button("Agregar Gasto"):
@@ -151,24 +170,7 @@ with grafico2:
     fig2 = px.pie(grafico_total2, names="QUIEN PAGA", values="VALOR")
     st.plotly_chart(fig2)
 
-filtro1, filtro2, filtro3 = st.columns(3, vertical_alignment="center")
-with filtro1:
-    st.multiselect("Filtrar por Quien Paga", options=df["QUIEN PAGA"].unique(), key="quien_paga")
 
-with filtro2:
-    st.multiselect("Filtrar por Mes", options=df["MES"].unique(), key="meses")
-
-with filtro3:
-    st.multiselect("Filtrar por Tipo", options=df["TIPO"].unique(), key="tipos")
-
-if st.session_state.quien_paga:
-    df = df[df["QUIEN PAGA"].isin(st.session_state.quien_paga)]
-
-if st.session_state.meses:
-    df = df[df["MES"].isin(st.session_state.meses)]
-
-if st.session_state.tipos:
-    df = df[df["TIPO"].isin(st.session_state.tipos)]
 
 col1, col2 = st.columns(2)
 
