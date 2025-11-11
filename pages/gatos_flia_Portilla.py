@@ -128,6 +128,9 @@ def seguimiento_productos():
             time.sleep(2)
             st.rerun()
 
+df["FECHA"] = pd.to_datetime(df["FECHA"], format="%Y-%m-%d")
+df["MES"] = df["FECHA"].dt.month
+
 filtro1, filtro2, filtro3 = st.columns(3, vertical_alignment="center")
 with filtro1:
     st.multiselect("Filtrar por Quien Paga", options=df["QUIEN PAGA"].unique(), key="quien_paga")
@@ -147,6 +150,7 @@ if st.session_state.meses:
 if st.session_state.tipos:
     df = df[df["TIPO"].isin(st.session_state.tipos)]
 
+
 col1, col2 = st.columns(2)
 with col1:
     if st.button("Agregar Gasto"):
@@ -157,9 +161,6 @@ with col2:
 
 df = df[~((df['TIPO'] == 'Personal') & (df['QUIEN PAGA'] == 'Edison'))]
 
-df["FECHA"] = pd.to_datetime(df["FECHA"], format="%Y-%m-%d")
-df["MES"] = df["FECHA"].dt.month
-
 grafico1, grafico2 = st.columns(2)
 with grafico1:
     grafico_total = df.groupby(["FECHA", "QUIEN PAGA"])["VALOR"].sum().reset_index()
@@ -169,8 +170,6 @@ with grafico2:
     grafico_total2 = df.groupby("QUIEN PAGA")["VALOR"].sum().reset_index()
     fig2 = px.pie(grafico_total2, names="QUIEN PAGA", values="VALOR")
     st.plotly_chart(fig2)
-
-
 
 col1, col2 = st.columns(2)
 
