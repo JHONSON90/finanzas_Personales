@@ -46,3 +46,6 @@ with col1:
     st.plotly_chart(fig)
 with col2:
     st.write(grafico1)
+
+
+

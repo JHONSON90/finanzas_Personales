@@ -26,12 +26,23 @@ except Exception as e:
 @st.dialog("🛒 Agregar Gasto")
 def agregar_gasto():
     Fecha = st.date_input("🗓️ Fecha de la Compra")
-    Pago_realizado = st.radio("👤 ¿Quién pagó?", ["Edison", "Diana"])
-    Tipo = st.radio("🏠 Tipo de Gasto", ["Casa", "Personal"])
+    col1, col2 = st.columns(2)
+    with col1:
+        Pago_realizado = st.radio("👤 ¿Quién pagó?", ["Edison", "Diana"])
+    with col2:
+        Tipo = st.radio("🏠 Tipo de Gasto", ["Casa", "Personal"])
     Concepto = st.text_input("📜 Concepto")
-    Categoría = st.selectbox("🏷️ Categoría", ["Alimentos", "Alimentacion (Snacks)", "Arriendo", "Aseo", "Casa",  "Compras", "Educación", "Entretenimiento","Salud", "Servicios", "Transporte", "Otros"])
-    Monto = st.number_input("💰 Monto", min_value=0.0, format="%.2f")
-    Pago = st.toggle("🔄 ¿Hay que devolver el dinero?", value=False)
+    col3, col4 = st.columns(2)
+    with col3:
+        Categoría = st.selectbox("🏷️ Categoría", ["Alimentos", "Alimentacion (Snacks)", "Arriendo", "Aseo", "Casa",  "Compras", "Educación", "Entretenimiento","Salud", "Servicios", "Transporte", "Otros"])
+    with col4:
+        Monto = st.number_input("💰 Monto", min_value=0.0, format="%.2f")
+    
+    col5, col6 = st.columns(2)
+    with col5:
+        Pago = st.toggle("💳 ¿Pago con tarjeta de credito?", value=False)
+    with col6:
+        Mes_Pago = st.selectbox("📅 Mes de Pago", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
     
     if st.button("Agregar Gasto"):
         df = conn.read(worksheet="Gastos", ttl=0)
@@ -42,7 +53,9 @@ def agregar_gasto():
             "CONCEPTO": [Concepto],
             "CLASIFICACION": [Categoría],
             "VALOR": [Monto],
-            "PAGO": [Pago]
+            "PAGO": [Pago],
+            "Mes_Pago": [Mes_Pago]
+
         })
         df = pd.concat([df, new_row], ignore_index=True)
         conn.update(worksheet="Gastos", data=df)
@@ -71,9 +84,10 @@ def seguimiento_productos():
     col4, col5 = st.columns(2)
     with col4:
         Categoría = st.selectbox("🏷️ Categoría de Gasto", ["Alimentos", "Alimentacion (Snacks)", "Arriendo", "Aseo", "Casa",  "Compras", "Educación", "Entretenimiento","Salud", "Servicios", "Transporte", "Otros"])
+        Pago = st.toggle("🔄 ¿Pago con Tarjeta de credito?", value=False)
     with col5:
         Proveedor = st.text_input("🏭 Proveedor")
-        Pago = st.toggle("🔄 ¿Hay que devolver el dinero?", value=False)
+        Mes_Pago = st.selectbox("Mes de Pago Tarjeta de Credito", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
     st.markdown("---")
     st.subheader("📝 Detalle de Productos (Llene la tabla a continuación)")
     df_productos_base = inicializar_productos_df()
@@ -121,6 +135,7 @@ def seguimiento_productos():
                 "CLASIFICACION": [Categoría],
                 "VALOR": [valor_total_compra],
                 "PAGO": [Pago],
+                "Mes_Pago": [Mes_Pago]
             })
             df = pd.concat([df, new_row2], ignore_index=True)
             conn.update(worksheet="Gastos", data=df)
@@ -182,7 +197,8 @@ data3.metric(f"Clasificación mas alta,  {para_metrica3["CLASIFICACION"]}", f"{p
 
 st.write(df.groupby("CONCEPTO")["VALOR"].sum().reset_index().sort_values(by="VALOR", ascending=False))
 
-
+st.subheader("Cuanto pagar Tarjeta de Credito")
+st.write(df.groupby("Mes_Pago")["VALOR"].sum())
 #todo: agregar funcionalidade para analizar el comportamiento de productos y mirar cuanto se debe devolver y mirar si se puede hacer una tabla para devolver y cambiar el estado de pago
 
 
