@@ -42,7 +42,7 @@ def agregar_gasto():
     with col5:
         Pago = st.toggle("💳 ¿Pago con tarjeta de credito?", value=False)
     with col6:
-        Mes_Pago = st.selectbox("📅 Mes de Pago", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+        Mes_Pago = st.selectbox("📅 Mes de Pago", ["","Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
     
     if st.button("Agregar Gasto"):
         df = conn.read(worksheet="Gastos", ttl=0)
@@ -87,7 +87,7 @@ def seguimiento_productos():
         Pago = st.toggle("🔄 ¿Pago con Tarjeta de credito?", value=False)
     with col5:
         Proveedor = st.text_input("🏭 Proveedor")
-        Mes_Pago = st.selectbox("Mes de Pago Tarjeta de Credito", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+        Mes_Pago = st.selectbox("Mes de Pago Tarjeta de Credito", ["","Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
     st.markdown("---")
     st.subheader("📝 Detalle de Productos (Llene la tabla a continuación)")
     df_productos_base = inicializar_productos_df()
