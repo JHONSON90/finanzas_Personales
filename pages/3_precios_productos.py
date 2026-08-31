@@ -65,7 +65,7 @@ else:
         st.markdown("##### 💡 Proveedor Recomendado por Menor Precio:")
         st.dataframe(
             mejores_precios[["PRODUCTO", "PROVEEDOR", "PRECIO_MIN", "PRECIO_PROM", "NUM_COMPRAS"]],
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "PRECIO_MIN": st.column_config.NumberColumn("Mejor Precio ($)", format="$%.2f"),
                 "PRECIO_PROM": st.column_config.NumberColumn("Precio Promedio ($)", format="$%.2f"),
@@ -84,7 +84,7 @@ else:
         )
         fig_prov.update_traces(textposition='inside', textinfo='percent+label')
         fig_prov.update_layout(margin=dict(l=10, r=10, t=20, b=20))
-        st.plotly_chart(fig_prov, use_container_width=True)
+        st.plotly_chart(fig_prov, width="stretch")
 
     # --- HISTORIAL DETALLADO ---
     st.markdown("---")
@@ -96,7 +96,7 @@ else:
     
     st.dataframe(
         df_show.sort_values(by="FECHA", ascending=False),
-        use_container_width=True,
+        width="stretch",
         column_config={
             "VALOR UNT": st.column_config.NumberColumn("Precio Unitario ($)", format="$%.2f"),
             "VALOR TOTAL": st.column_config.NumberColumn("Total ($)", format="$%.2f")

@@ -42,7 +42,7 @@ with tab1:
         casa_edited = st.data_editor(
             df_casa[["RUBRO", "MONTO_PRESUPUESTO", "ACTIVO"]],
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key="editor_casa",
             column_config={
                 "RUBRO": st.column_config.TextColumn("Rubro", required=True),
@@ -79,7 +79,7 @@ with tab2:
     personal_edited = st.data_editor(
         df_personal[["RUBRO", "MONTO_PRESUPUESTO", "ACTIVO"]],
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         key="editor_personal",
         column_config={
             "RUBRO": st.column_config.TextColumn("Rubro Personal", required=True),
