@@ -4,8 +4,7 @@ import streamlit as st
 USER_EMAILS = {
     "edisonportillal@gmail.com": "Edison",
     "edisonportillaluna@gmail.com": "Edison",
-    "dianaportilla@gmail.com": "Diana",
-    "dianaluna@gmail.com": "Diana",
+    "dianatc0812@gmail.com": "Diana",
 }
 
 ADMIN_EMAILS = ["edisonportillal@gmail.com", "edisonportillaluna@gmail.com"]

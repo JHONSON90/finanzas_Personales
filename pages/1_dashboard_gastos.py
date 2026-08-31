@@ -80,7 +80,7 @@ def modal_agregar_gasto():
         )
 
     st.markdown("---")
-    if st.button("💾 Guardar Gasto", type="primary", width="stretch"):
+    if st.button("💾 Guardar Gasto", type="primary", use_container_width=True):
         if monto <= 0:
             st.error("El monto debe ser mayor a 0.")
             return
@@ -177,7 +177,7 @@ def modal_seguimiento_productos():
     st.metric("Total de la Compra", f"${valor_total_compra:,.2f}", border=True)
 
     st.markdown("---")
-    if st.button("💾 Guardar Compra Completa", type="primary", width="stretch"):
+    if st.button("💾 Guardar Compra Completa", type="primary", use_container_width=True):
         if valor_total_compra <= 0 or productos_validos.empty:
             st.error("Debes ingresar al menos un producto con precio y cantidad válidos.")
             return
@@ -207,10 +207,10 @@ st.caption(f"Usuario: **{current_user}** | Visualizando gastos de **Casa** y gas
 
 btn_col1, btn_col2, _ = st.columns([1, 1.2, 2])
 with btn_col1:
-    if st.button("➕ Registrar Gasto", type="primary", width="stretch"):
+    if st.button("➕ Registrar Gasto", type="primary", use_container_width=True):
         modal_agregar_gasto()
 with btn_col2:
-    if st.button("🛒 Registrar Compra Detallada", width="stretch"):
+    if st.button("🛒 Registrar Compra Detallada", use_container_width=True):
         modal_seguimiento_productos()
 
 st.markdown("---")
@@ -306,7 +306,7 @@ fig_mensual.update_layout(
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     yaxis=dict(title="Monto ($)")
 )
-st.plotly_chart(fig_mensual, width="stretch")
+st.plotly_chart(fig_mensual, use_container_width=True)
 
 st.markdown("---")
 
@@ -378,7 +378,7 @@ with g_col1:
             margin=dict(l=10, r=10, t=20, b=80),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        st.plotly_chart(fig_bar, width="stretch")
+        st.plotly_chart(fig_bar, use_container_width=True)
     else:
         st.info("Sin datos para graficar.")
 
@@ -395,7 +395,7 @@ with g_col2:
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         fig_pie.update_layout(height=300, margin=dict(l=10, r=10, t=20, b=20))
-        st.plotly_chart(fig_pie, width="stretch")
+        st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.info("Sin datos para graficar.")
 
@@ -413,7 +413,7 @@ with g_col3:
             color_discrete_map={"Edison": "#3B82F6", "Diana": "#EC4899"}
         )
         fig_payer.update_layout(height=280, showlegend=False, margin=dict(l=10, r=10, t=20, b=20))
-        st.plotly_chart(fig_payer, width="stretch")
+        st.plotly_chart(fig_payer, use_container_width=True)
 
 with g_col4:
     st.markdown("##### 💳 Compromisos Tarjetas de Crédito por Mes")
@@ -429,7 +429,7 @@ with g_col4:
                 color_discrete_sequence=["#F97316"]
             )
             fig_tc.update_layout(height=280, margin=dict(l=10, r=10, t=20, b=20))
-            st.plotly_chart(fig_tc, width="stretch")
+            st.plotly_chart(fig_tc, use_container_width=True)
         else:
             st.info("No hay pagos con tarjeta de crédito registrados en la selección.")
 
