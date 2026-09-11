@@ -29,7 +29,9 @@ df_prod = load_seguimiento_productos()
 if df_prod.empty:
     st.info("No hay registros de seguimiento a productos todavía. Puedes registrarlos desde el Dashboard.")
 else:
-    df_prod["FECHA"] = pd.to_datetime(df_prod["FECHA"], errors="coerce")
+    if "FECHA_DT" not in df_prod.columns:
+        from services.data_service import safe_parse_dates
+        df_prod["FECHA_DT"] = safe_parse_dates(df_prod["FECHA"])
     if "RUBRO" not in df_prod.columns:
         df_prod["RUBRO"] = "Otros"
 
@@ -99,7 +101,10 @@ else:
     cols_prod = ["FECHA", "PRODUCTO", "PROVEEDOR", "RUBRO", "CANTIDAD", "VALOR UNT", "VALOR TOTAL"]
     df_show = df_filtered[[c for c in cols_prod if c in df_filtered.columns]].copy()
     if "FECHA" in df_show.columns:
-        df_show["FECHA"] = df_show["FECHA"].dt.strftime("%Y-%m-%d")
+        if pd.api.types.is_datetime64_any_dtype(df_show["FECHA"]):
+            df_show["FECHA"] = df_show["FECHA"].dt.strftime("%Y-%m-%d")
+        else:
+            df_show["FECHA"] = df_show["FECHA"].astype(str)
     
     st.dataframe(
         df_show.sort_values(by="FECHA", ascending=False),

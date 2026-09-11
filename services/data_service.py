@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 import traceback
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 def assign_default_comportamiento(rubro: str) -> str:
     """Asigna comportamiento Fijo o Variable por defecto según palabras clave del rubro."""
@@ -38,28 +38,59 @@ def get_connection():
     return st.connection("gsheets", type=GSheetsConnection)
 
 def safe_parse_dates(series: pd.Series) -> pd.Series:
-    """Parsea fechas soportando múltiples formatos (YYYY-MM-DD, DD/MM/YYYY, etc.) sin corromper datos."""
+    """
+    Parsea fechas soportando múltiples formatos (YYYY-MM-DD, DD/MM/YYYY, etc.)
+    priorizando YYYY-MM-DD e interpretando DD/MM/YYYY si contiene barras.
+    """
     if series.empty:
         return series
-    return pd.to_datetime(series, format="mixed", dayfirst=True, errors="coerce")
+
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series
+
+    s_clean = series.astype(str).str.strip().replace(["nan", "None", "NaT", ""], pd.NA)
+
+    # 1. Intentar formato ISO estándar YYYY-MM-DD primero (prioridad máxima)
+    parsed_iso = pd.to_datetime(s_clean, format="%Y-%m-%d", errors="coerce")
+
+    # 2. Para las celdas que fallaron (ej. con barras 10/09/2026), intentar DD/MM/YYYY
+    mask_na = parsed_iso.isna() & s_clean.notna()
+    if mask_na.any():
+        parsed_latam = pd.to_datetime(s_clean[mask_na], format="%d/%m/%Y", errors="coerce")
+        parsed_iso = parsed_iso.combine_first(parsed_latam)
+
+    # 3. Fallback con format='mixed' y dayfirst=True
+    mask_still_na = parsed_iso.isna() & s_clean.notna()
+    if mask_still_na.any():
+        parsed_mixed = pd.to_datetime(s_clean[mask_still_na], format="mixed", dayfirst=True, errors="coerce")
+        parsed_iso = parsed_iso.combine_first(parsed_mixed)
+
+    return parsed_iso
+
+def normalize_date_column(series: pd.Series) -> Tuple[pd.Series, pd.Series]:
+    """
+    Normaliza una columna de fechas en:
+    1. FECHA: string estrictamente formateado como 'YYYY-MM-DD'
+    2. FECHA_DT: pd.Series con datetime64 para ordenamiento y filtros numéricos
+    """
+    dt_series = safe_parse_dates(series)
+    str_series = dt_series.dt.strftime("%Y-%m-%d")
+    
+    # Si alguna fila no pudo ser parseada pero tenía texto original, conservarlo limpio
+    str_clean = series.astype(str).str.strip().replace(["nan", "None", "NaT"], "")
+    str_series = str_series.fillna(str_clean)
+    return str_series, dt_series
 
 def format_dates_for_sheet(df: pd.DataFrame, col_name: str = "FECHA") -> pd.DataFrame:
-    """Garantiza que las fechas se guarden como string YYYY-MM-DD sin borrar las existentes."""
+    """Garantiza que toda la columna de fechas se guarde estrictamente como string YYYY-MM-DD."""
     df_out = df.copy()
     if col_name in df_out.columns:
-        if pd.api.types.is_datetime64_any_dtype(df_out[col_name]):
-            df_out[col_name] = df_out[col_name].dt.strftime("%Y-%m-%d").fillna("")
-        else:
-            parsed = pd.to_datetime(df_out[col_name], format="mixed", dayfirst=True, errors="coerce")
-            formatted = parsed.dt.strftime("%Y-%m-%d")
-            # Conservar el valor original si el parseo directo dio NaT pero el original tenía texto
-            df_out[col_name] = formatted.combine_first(
-                df_out[col_name].astype(str).replace("nan", "").replace("None", "").replace("NaT", "")
-            )
+        str_dates, _ = normalize_date_column(df_out[col_name])
+        df_out[col_name] = str_dates
     return df_out
 
 def load_gastos() -> pd.DataFrame:
-    """Carga los datos de la hoja 'Gastos' preservando las fechas y tipos."""
+    """Carga los datos de la hoja 'Gastos' normalizando FECHA siempre a YYYY-MM-DD."""
     conn = get_connection()
     try:
         df = conn.read(worksheet="Gastos", ttl=0)
@@ -77,8 +108,8 @@ def load_gastos() -> pd.DataFrame:
             if "PAGO" in df.columns:
                 df["PAGO"] = df["PAGO"].astype(bool)
             if "FECHA" in df.columns:
-                # Mantener FECHA como string/formato legible y crear FECHA_DT para operaciones
-                df["FECHA_DT"] = safe_parse_dates(df["FECHA"])
+                # Normalizar FECHA estrictamente a formato YYYY-MM-DD y generar FECHA_DT
+                df["FECHA"], df["FECHA_DT"] = normalize_date_column(df["FECHA"])
         return df
     except Exception as e:
         st.error(f"Error al leer hoja Gastos: {e}")
@@ -88,7 +119,7 @@ def load_gastos() -> pd.DataFrame:
         ])
 
 def save_gastos(df: pd.DataFrame) -> bool:
-    """Guarda el DataFrame en la hoja 'Gastos'."""
+    """Guarda el DataFrame en la hoja 'Gastos' con fechas estandarizadas en YYYY-MM-DD."""
     conn = get_connection()
     try:
         df_to_save = format_dates_for_sheet(df, "FECHA")
@@ -101,7 +132,7 @@ def save_gastos(df: pd.DataFrame) -> bool:
         return False
 
 def add_single_gasto(new_gasto_dict: dict) -> bool:
-    """Lee la hoja Gastos fresca, agrega el nuevo gasto de forma segura y guarda."""
+    """Lee la hoja Gastos fresca, agrega el nuevo gasto con formato YYYY-MM-DD estricto y guarda."""
     conn = get_connection()
     try:
         df_current = conn.read(worksheet="Gastos", ttl=0)
@@ -111,11 +142,20 @@ def add_single_gasto(new_gasto_dict: dict) -> bool:
                 "CLASIFICACION", "RUBRO", "VALOR", "PAGO", "Mes_Pago"
             ])
         
-        # Formatear la nueva fila
+        # Forzar formato YYYY-MM-DD estricto en el nuevo gasto
+        if "FECHA" in new_gasto_dict:
+            parsed_single = safe_parse_dates(pd.Series([new_gasto_dict["FECHA"]]))
+            if not parsed_single.empty and pd.notnull(parsed_single.iloc[0]):
+                new_gasto_dict["FECHA"] = parsed_single.iloc[0].strftime("%Y-%m-%d")
+        
+        # Formatear la nueva fila y concatenar
         new_row = pd.DataFrame([new_gasto_dict])
         df_updated = pd.concat([df_current, new_row], ignore_index=True)
         
+        # Estandarizar toda la hoja completa antes de guardar para unificar datos viejos y nuevos
         df_to_save = format_dates_for_sheet(df_updated, "FECHA")
+        if "FECHA_DT" in df_to_save.columns:
+            df_to_save = df_to_save.drop(columns=["FECHA_DT"])
         conn.update(worksheet="Gastos", data=df_to_save)
         return True
     except Exception as e:
@@ -123,7 +163,7 @@ def add_single_gasto(new_gasto_dict: dict) -> bool:
         return False
 
 def load_seguimiento_productos() -> pd.DataFrame:
-    """Carga los datos de la hoja 'Seguimiento_Productos'."""
+    """Carga los datos de la hoja 'Seguimiento_Productos' normalizando FECHA a YYYY-MM-DD."""
     conn = get_connection()
     try:
         df = conn.read(worksheet="Seguimiento_Productos", ttl=0)
@@ -135,7 +175,7 @@ def load_seguimiento_productos() -> pd.DataFrame:
             if "RUBRO" not in df.columns:
                 df["RUBRO"] = "Otros"
             if "FECHA" in df.columns:
-                df["FECHA_DT"] = safe_parse_dates(df["FECHA"])
+                df["FECHA"], df["FECHA_DT"] = normalize_date_column(df["FECHA"])
             for col in ["CANTIDAD", "VALOR UNT", "VALOR TOTAL"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
@@ -147,7 +187,7 @@ def load_seguimiento_productos() -> pd.DataFrame:
         ])
 
 def save_seguimiento_productos(df: pd.DataFrame) -> bool:
-    """Guarda el DataFrame en la hoja 'Seguimiento_Productos'."""
+    """Guarda el DataFrame en la hoja 'Seguimiento_Productos' con fechas en YYYY-MM-DD."""
     conn = get_connection()
     try:
         df_to_save = format_dates_for_sheet(df, "FECHA")
@@ -160,9 +200,15 @@ def save_seguimiento_productos(df: pd.DataFrame) -> bool:
         return False
 
 def add_compra_con_productos(productos_df: pd.DataFrame, new_gasto_dict: dict) -> bool:
-    """Guarda tanto la lista de productos como el gasto general asociado de forma atómica y segura."""
+    """Guarda tanto la lista de productos como el gasto general con formato YYYY-MM-DD estricto."""
     conn = get_connection()
     try:
+        # Asegurar formato YYYY-MM-DD en new_gasto_dict
+        if "FECHA" in new_gasto_dict:
+            parsed_single = safe_parse_dates(pd.Series([new_gasto_dict["FECHA"]]))
+            if not parsed_single.empty and pd.notnull(parsed_single.iloc[0]):
+                new_gasto_dict["FECHA"] = parsed_single.iloc[0].strftime("%Y-%m-%d")
+
         # 1. Guardar productos en Seguimiento_Productos
         df_prod_curr = conn.read(worksheet="Seguimiento_Productos", ttl=0)
         if df_prod_curr is None or df_prod_curr.empty:
@@ -172,6 +218,8 @@ def add_compra_con_productos(productos_df: pd.DataFrame, new_gasto_dict: dict) -
         
         prod_updated = pd.concat([df_prod_curr, productos_df], ignore_index=True)
         prod_to_save = format_dates_for_sheet(prod_updated, "FECHA")
+        if "FECHA_DT" in prod_to_save.columns:
+            prod_to_save = prod_to_save.drop(columns=["FECHA_DT"])
         conn.update(worksheet="Seguimiento_Productos", data=prod_to_save)
 
         # 2. Guardar gasto consolidado en Gastos
@@ -185,6 +233,8 @@ def add_compra_con_productos(productos_df: pd.DataFrame, new_gasto_dict: dict) -
         new_gasto_row = pd.DataFrame([new_gasto_dict])
         gastos_updated = pd.concat([df_gastos_curr, new_gasto_row], ignore_index=True)
         gastos_to_save = format_dates_for_sheet(gastos_updated, "FECHA")
+        if "FECHA_DT" in gastos_to_save.columns:
+            gastos_to_save = gastos_to_save.drop(columns=["FECHA_DT"])
         conn.update(worksheet="Gastos", data=gastos_to_save)
 
         return True
