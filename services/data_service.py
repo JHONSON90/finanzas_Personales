@@ -4,24 +4,33 @@ from streamlit_gsheets import GSheetsConnection
 import traceback
 from typing import Optional, List, Dict, Any
 
+def assign_default_comportamiento(rubro: str) -> str:
+    """Asigna comportamiento Fijo o Variable por defecto según palabras clave del rubro."""
+    r = str(rubro).lower()
+    fixed_keywords = ["arriendo", "servicio", "jardín", "jardin", "hipotecario", "ahorro", "crédito", "credito", "seguro", "colegio", "administración", "administracion", "pensión", "pension"]
+    for kw in fixed_keywords:
+        if kw in r:
+            return "Fijo"
+    return "Variable"
+
 DEFAULT_CASA_PRESUPUESTOS = [
-    {"RUBRO": "Arriendo", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 850000.0, "ACTIVO": True},
-    {"RUBRO": "Servicio doméstico", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 950000.0, "ACTIVO": True},
-    {"RUBRO": "Servicios públicos", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 400000.0, "ACTIVO": True},
-    {"RUBRO": "Mercado y despensa", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 1200000.0, "ACTIVO": True},
-    {"RUBRO": "Gastos niños (Pañales etc)", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 600000.0, "ACTIVO": True},
-    {"RUBRO": "Transporte local", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 25000.0, "ACTIVO": True},
-    {"RUBRO": "Productos de aseo", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 500000.0, "ACTIVO": True},
-    {"RUBRO": "Jardín niños", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 500000.0, "ACTIVO": True},
+    {"RUBRO": "Arriendo", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 850000.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
+    {"RUBRO": "Servicio doméstico", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 950000.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
+    {"RUBRO": "Servicios públicos", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 400000.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
+    {"RUBRO": "Mercado y despensa", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 1200000.0, "ACTIVO": True, "COMPORTAMIENTO": "Variable"},
+    {"RUBRO": "Gastos niños (Pañales etc)", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 600000.0, "ACTIVO": True, "COMPORTAMIENTO": "Variable"},
+    {"RUBRO": "Transporte local", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 25000.0, "ACTIVO": True, "COMPORTAMIENTO": "Variable"},
+    {"RUBRO": "Productos de aseo", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 500000.0, "ACTIVO": True, "COMPORTAMIENTO": "Variable"},
+    {"RUBRO": "Jardín niños", "TIPO": "Casa", "USUARIO": "Todos", "MONTO_PRESUPUESTO": 500000.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
 ]
 
 DEFAULT_PERSONAL_PRESUPUESTOS = [
-    {"RUBRO": "Crédito hipotecario", "TIPO": "Personal", "USUARIO": "Edison", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True},
-    {"RUBRO": "Antojos y snacks", "TIPO": "Personal", "USUARIO": "Edison", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True},
-    {"RUBRO": "Meta de ahorro", "TIPO": "Personal", "USUARIO": "Edison", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True},
-    {"RUBRO": "Crédito hipotecario", "TIPO": "Personal", "USUARIO": "Diana", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True},
-    {"RUBRO": "Antojos y snacks", "TIPO": "Personal", "USUARIO": "Diana", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True},
-    {"RUBRO": "Meta de ahorro", "TIPO": "Personal", "USUARIO": "Diana", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True},
+    {"RUBRO": "Crédito hipotecario", "TIPO": "Personal", "USUARIO": "Edison", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
+    {"RUBRO": "Antojos y snacks", "TIPO": "Personal", "USUARIO": "Edison", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True, "COMPORTAMIENTO": "Variable"},
+    {"RUBRO": "Meta de ahorro", "TIPO": "Personal", "USUARIO": "Edison", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
+    {"RUBRO": "Crédito hipotecario", "TIPO": "Personal", "USUARIO": "Diana", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
+    {"RUBRO": "Antojos y snacks", "TIPO": "Personal", "USUARIO": "Diana", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True, "COMPORTAMIENTO": "Variable"},
+    {"RUBRO": "Meta de ahorro", "TIPO": "Personal", "USUARIO": "Diana", "MONTO_PRESUPUESTO": 0.0, "ACTIVO": True, "COMPORTAMIENTO": "Fijo"},
 ]
 
 def get_connection():
@@ -199,6 +208,14 @@ def load_presupuestos() -> pd.DataFrame:
                 df["ACTIVO"] = df["ACTIVO"].astype(bool)
             else:
                 df["ACTIVO"] = True
+            
+            if "COMPORTAMIENTO" not in df.columns:
+                df["COMPORTAMIENTO"] = df["RUBRO"].apply(assign_default_comportamiento)
+            else:
+                df["COMPORTAMIENTO"] = df["COMPORTAMIENTO"].fillna("").astype(str).str.strip().str.capitalize()
+                mask_invalid = ~df["COMPORTAMIENTO"].isin(["Fijo", "Variable"])
+                if mask_invalid.any():
+                    df.loc[mask_invalid, "COMPORTAMIENTO"] = df.loc[mask_invalid, "RUBRO"].apply(assign_default_comportamiento)
         return df
     except Exception as e:
         try:
