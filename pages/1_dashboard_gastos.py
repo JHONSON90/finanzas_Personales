@@ -348,17 +348,24 @@ else:
     mes_nombre_budget = MESES_NOMBRE[target_month_proj - 1]
     label_periodo_budget = f"{mes_nombre_budget} {target_year_proj}"
 
-summary_budget = compute_budget_summary(
-    df_gastos_budget,
-    df_presupuestos,
-    current_user,
-    tipo_filtro=sel_tipo,
-    rubros_filtro=sel_rubros,
-    num_meses=num_meses_budget
-)
+try:
+    summary_budget = compute_budget_summary(
+        df_gastos_budget,
+        df_presupuestos,
+        current_user,
+        tipo_filtro=sel_tipo,
+        rubros_filtro=sel_rubros,
+        num_meses=num_meses_budget
+    )
+except TypeError:
+    summary_budget = compute_budget_summary(
+        df_gastos_budget,
+        df_presupuestos,
+        current_user
+    )
 
-total_gastado_budget = df_gastos_budget["VALOR"].sum() if not df_gastos_budget.empty else 0.0
-total_presupuestado = summary_budget["MONTO_PRESUPUESTO"].sum()
+total_gastado_budget = float(df_gastos_budget["VALOR"].sum()) if not df_gastos_budget.empty and "VALOR" in df_gastos_budget.columns else 0.0
+total_presupuestado = float(summary_budget["MONTO_PRESUPUESTO"].sum()) if not summary_budget.empty and "MONTO_PRESUPUESTO" in summary_budget.columns else 0.0
 pct_global = (total_gastado_budget / total_presupuestado * 100.0) if total_presupuestado > 0 else 0.0
 
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)

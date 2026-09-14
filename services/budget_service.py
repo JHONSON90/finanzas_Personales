@@ -49,90 +49,111 @@ def compute_budget_summary(
     df_gastos_visibles: pd.DataFrame,
     df_presupuestos: pd.DataFrame,
     current_user: str,
+    *args,
     tipo_filtro: Optional[str] = None,
     rubros_filtro: Optional[List[str]] = None,
-    num_meses: int = 1
+    num_meses: int = 1,
+    **kwargs
 ) -> pd.DataFrame:
     """
     Calcula el comparativo de gasto real vs presupuesto mensual por cada rubro (Casa y Personales del usuario).
     Aplica filtros de tipo, rubro y escalamiento por número de meses si aplica.
     Preserva la columna COMPORTAMIENTO (Fijo / Variable).
     """
-    df_presup = df_presupuestos.copy()
-    if "ACTIVO" in df_presup.columns:
-        df_presup = df_presup[df_presup["ACTIVO"] == True]
+    try:
+        df_presup = df_presupuestos.copy() if df_presupuestos is not None else pd.DataFrame()
+        if "ACTIVO" in df_presup.columns:
+            df_presup = df_presup[df_presup["ACTIVO"] == True]
 
-    presup_casa = df_presup[df_presup["TIPO"].str.lower() == "casa"]
-    presup_user = df_presup[
-        (df_presup["TIPO"].str.lower() == "personal") & 
-        (df_presup["USUARIO"].str.lower() == current_user.lower())
-    ]
-    df_metas = pd.concat([presup_casa, presup_user], ignore_index=True)
+        if "TIPO" not in df_presup.columns:
+            df_presup["TIPO"] = "Casa"
+        if "USUARIO" not in df_presup.columns:
+            df_presup["USUARIO"] = "Todos"
 
-    if df_metas.empty:
-        df_metas = pd.DataFrame(columns=["RUBRO", "TIPO", "USUARIO", "MONTO_PRESUPUESTO", "COMPORTAMIENTO"])
+        user_clean = str(current_user or "").strip().lower()
+        presup_casa = df_presup[df_presup["TIPO"].fillna("").astype(str).str.lower() == "casa"]
+        presup_user = df_presup[
+            (df_presup["TIPO"].fillna("").astype(str).str.lower() == "personal") & 
+            (df_presup["USUARIO"].fillna("").astype(str).str.lower() == user_clean)
+        ]
+        df_metas = pd.concat([presup_casa, presup_user], ignore_index=True)
 
-    if tipo_filtro and tipo_filtro != "Todos":
-        df_metas = df_metas[df_metas["TIPO"].str.lower() == tipo_filtro.lower()]
-    if rubros_filtro:
-        df_metas = df_metas[df_metas["RUBRO"].isin(rubros_filtro)]
+        if df_metas.empty:
+            df_metas = pd.DataFrame(columns=["RUBRO", "TIPO", "USUARIO", "MONTO_PRESUPUESTO", "COMPORTAMIENTO"])
 
-    # Escalar presupuesto mensual por el número de meses evaluados (por defecto 1 mes)
-    factor_meses = max(1, int(num_meses)) if num_meses else 1
-    if "MONTO_PRESUPUESTO" in df_metas.columns:
-        df_metas["MONTO_PRESUPUESTO"] = df_metas["MONTO_PRESUPUESTO"] * factor_meses
+        if tipo_filtro and str(tipo_filtro).lower() != "todos":
+            df_metas = df_metas[df_metas["TIPO"].fillna("").astype(str).str.lower() == str(tipo_filtro).lower()]
+        if rubros_filtro:
+            df_metas = df_metas[df_metas["RUBRO"].isin(rubros_filtro)]
 
-    if "COMPORTAMIENTO" not in df_metas.columns:
-        df_metas["COMPORTAMIENTO"] = "Variable"
-    else:
-        df_metas["COMPORTAMIENTO"] = df_metas["COMPORTAMIENTO"].fillna("Variable")
+        # Escalar presupuesto mensual por el número de meses evaluados (por defecto 1 mes)
+        try:
+            factor_meses = max(1, int(num_meses)) if num_meses else 1
+        except Exception:
+            factor_meses = 1
 
-    # Agrupar gastos reales por RUBRO
-    if not df_gastos_visibles.empty and "RUBRO" in df_gastos_visibles.columns:
-        gastos_por_rubro = df_gastos_visibles.groupby("RUBRO")["VALOR"].sum().reset_index()
-        gastos_por_rubro.rename(columns={"VALOR": "GASTO_REAL"}, inplace=True)
-    else:
-        gastos_por_rubro = pd.DataFrame(columns=["RUBRO", "GASTO_REAL"])
+        if "MONTO_PRESUPUESTO" in df_metas.columns:
+            df_metas["MONTO_PRESUPUESTO"] = pd.to_numeric(df_metas["MONTO_PRESUPUESTO"], errors="coerce").fillna(0.0) * factor_meses
 
-    merged = pd.merge(df_metas, gastos_por_rubro, on="RUBRO", how="outer")
-    if rubros_filtro:
-        merged = merged[merged["RUBRO"].isin(rubros_filtro)]
-    if tipo_filtro and tipo_filtro != "Todos":
-        merged = merged[merged["TIPO"].fillna("").str.lower() == tipo_filtro.lower()]
-
-    merged["MONTO_PRESUPUESTO"] = merged["MONTO_PRESUPUESTO"].fillna(0.0)
-    merged["GASTO_REAL"] = merged["GASTO_REAL"].fillna(0.0)
-    merged["TIPO"] = merged["TIPO"].fillna("Casa")
-    merged["USUARIO"] = merged["USUARIO"].fillna("Todos")
-    merged["COMPORTAMIENTO"] = merged["COMPORTAMIENTO"].fillna("Variable")
-
-    merged["DIFERENCIA"] = merged["MONTO_PRESUPUESTO"] - merged["GASTO_REAL"]
-    
-    def calc_pct(row):
-        if row["MONTO_PRESUPUESTO"] > 0:
-            return (row["GASTO_REAL"] / row["MONTO_PRESUPUESTO"]) * 100.0
-        elif row["GASTO_REAL"] > 0:
-            return 100.0
-        return 0.0
-
-    merged["PORCENTAJE_EJECUCION"] = merged.apply(calc_pct, axis=1)
-
-    def get_status(row):
-        pct = row["PORCENTAJE_EJECUCION"]
-        monto_presup = row["MONTO_PRESUPUESTO"]
-        if monto_presup > 0 and pct > 100.0:
-            exceso = row["GASTO_REAL"] - monto_presup
-            return f"🔴 Excedido (+${exceso:,.0f})", "#EF4444"
-        elif pct >= 80.0:
-            return "🟡 En Alerta (80%-100%)", "#F59E0B"
+        if "COMPORTAMIENTO" not in df_metas.columns:
+            df_metas["COMPORTAMIENTO"] = "Variable"
         else:
-            return "🟢 En Rango (<80%)", "#10B981"
+            df_metas["COMPORTAMIENTO"] = df_metas["COMPORTAMIENTO"].fillna("Variable")
 
-    status_data = merged.apply(get_status, axis=1)
-    merged["ESTADO"] = [s[0] for s in status_data]
-    merged["COLOR"] = [s[1] for s in status_data]
+        # Agrupar gastos reales por RUBRO
+        if df_gastos_visibles is not None and not df_gastos_visibles.empty and "RUBRO" in df_gastos_visibles.columns:
+            df_g = df_gastos_visibles.copy()
+            df_g["VALOR"] = pd.to_numeric(df_g["VALOR"], errors="coerce").fillna(0.0)
+            gastos_por_rubro = df_g.groupby("RUBRO")["VALOR"].sum().reset_index()
+            gastos_por_rubro.rename(columns={"VALOR": "GASTO_REAL"}, inplace=True)
+        else:
+            gastos_por_rubro = pd.DataFrame(columns=["RUBRO", "GASTO_REAL"])
 
-    return merged.sort_values(by=["PORCENTAJE_EJECUCION", "GASTO_REAL"], ascending=False).reset_index(drop=True)
+        merged = pd.merge(df_metas, gastos_por_rubro, on="RUBRO", how="outer")
+        if rubros_filtro:
+            merged = merged[merged["RUBRO"].isin(rubros_filtro)]
+        if tipo_filtro and str(tipo_filtro).lower() != "todos":
+            merged = merged[merged["TIPO"].fillna("").astype(str).str.lower() == str(tipo_filtro).lower()]
+
+        merged["MONTO_PRESUPUESTO"] = pd.to_numeric(merged["MONTO_PRESUPUESTO"], errors="coerce").fillna(0.0)
+        merged["GASTO_REAL"] = pd.to_numeric(merged["GASTO_REAL"], errors="coerce").fillna(0.0)
+        merged["TIPO"] = merged["TIPO"].fillna("Casa")
+        merged["USUARIO"] = merged["USUARIO"].fillna("Todos")
+        merged["COMPORTAMIENTO"] = merged["COMPORTAMIENTO"].fillna("Variable")
+
+        merged["DIFERENCIA"] = merged["MONTO_PRESUPUESTO"] - merged["GASTO_REAL"]
+        
+        def calc_pct(row):
+            if row["MONTO_PRESUPUESTO"] > 0:
+                return (row["GASTO_REAL"] / row["MONTO_PRESUPUESTO"]) * 100.0
+            elif row["GASTO_REAL"] > 0:
+                return 100.0
+            return 0.0
+
+        merged["PORCENTAJE_EJECUCION"] = merged.apply(calc_pct, axis=1)
+
+        def get_status(row):
+            pct = row["PORCENTAJE_EJECUCION"]
+            monto_presup = row["MONTO_PRESUPUESTO"]
+            if monto_presup > 0 and pct > 100.0:
+                exceso = row["GASTO_REAL"] - monto_presup
+                return f"🔴 Excedido (+${exceso:,.0f})", "#EF4444"
+            elif pct >= 80.0:
+                return "🟡 En Alerta (80%-100%)", "#F59E0B"
+            else:
+                return "🟢 En Rango (<80%)", "#10B981"
+
+        status_data = merged.apply(get_status, axis=1)
+        merged["ESTADO"] = [s[0] for s in status_data]
+        merged["COLOR"] = [s[1] for s in status_data]
+
+        return merged.sort_values(by=["PORCENTAJE_EJECUCION", "GASTO_REAL"], ascending=False).reset_index(drop=True)
+    except Exception as e:
+        return pd.DataFrame(columns=[
+            "RUBRO", "TIPO", "USUARIO", "MONTO_PRESUPUESTO",
+            "COMPORTAMIENTO", "GASTO_REAL", "DIFERENCIA",
+            "PORCENTAJE_EJECUCION", "ESTADO", "COLOR"
+        ])
 
 def compute_projection_summary(
     df_gastos_visibles: pd.DataFrame,

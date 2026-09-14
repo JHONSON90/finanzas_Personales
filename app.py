@@ -1,9 +1,18 @@
 import sys
+import importlib
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+
+# Recargar servicios dinámicamente para evitar caché desactualizado en memoria en Streamlit Cloud
+for mod_name in ["services.budget_service", "services.data_service", "services.auth_service"]:
+    if mod_name in sys.modules:
+        try:
+            importlib.reload(sys.modules[mod_name])
+        except Exception:
+            pass
 
 import streamlit as st
 from services.auth_service import get_current_user, ADMIN_EMAILS
