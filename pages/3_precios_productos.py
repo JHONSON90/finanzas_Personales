@@ -93,7 +93,7 @@ else:
         )
         fig_prov.update_traces(textposition='inside', textinfo='percent+label')
         fig_prov.update_layout(margin=dict(l=10, r=10, t=20, b=20))
-        st.plotly_chart(fig_prov, use_container_width=True)
+        st.plotly_chart(fig_prov, width='stretch')
 
     # --- HISTORIAL DETALLADO ---
     st.markdown("---")
