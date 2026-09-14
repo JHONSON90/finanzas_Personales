@@ -45,9 +45,17 @@ def get_available_rubros(df_presupuestos: pd.DataFrame, tipo: str, current_user:
 import calendar
 from datetime import datetime
 
-def compute_budget_summary(df_gastos_visibles: pd.DataFrame, df_presupuestos: pd.DataFrame, current_user: str) -> pd.DataFrame:
+def compute_budget_summary(
+    df_gastos_visibles: pd.DataFrame,
+    df_presupuestos: pd.DataFrame,
+    current_user: str,
+    tipo_filtro: Optional[str] = None,
+    rubros_filtro: Optional[List[str]] = None,
+    num_meses: int = 1
+) -> pd.DataFrame:
     """
     Calcula el comparativo de gasto real vs presupuesto mensual por cada rubro (Casa y Personales del usuario).
+    Aplica filtros de tipo, rubro y escalamiento por número de meses si aplica.
     Preserva la columna COMPORTAMIENTO (Fijo / Variable).
     """
     df_presup = df_presupuestos.copy()
@@ -64,6 +72,16 @@ def compute_budget_summary(df_gastos_visibles: pd.DataFrame, df_presupuestos: pd
     if df_metas.empty:
         df_metas = pd.DataFrame(columns=["RUBRO", "TIPO", "USUARIO", "MONTO_PRESUPUESTO", "COMPORTAMIENTO"])
 
+    if tipo_filtro and tipo_filtro != "Todos":
+        df_metas = df_metas[df_metas["TIPO"].str.lower() == tipo_filtro.lower()]
+    if rubros_filtro:
+        df_metas = df_metas[df_metas["RUBRO"].isin(rubros_filtro)]
+
+    # Escalar presupuesto mensual por el número de meses evaluados (por defecto 1 mes)
+    factor_meses = max(1, int(num_meses)) if num_meses else 1
+    if "MONTO_PRESUPUESTO" in df_metas.columns:
+        df_metas["MONTO_PRESUPUESTO"] = df_metas["MONTO_PRESUPUESTO"] * factor_meses
+
     if "COMPORTAMIENTO" not in df_metas.columns:
         df_metas["COMPORTAMIENTO"] = "Variable"
     else:
@@ -77,6 +95,11 @@ def compute_budget_summary(df_gastos_visibles: pd.DataFrame, df_presupuestos: pd
         gastos_por_rubro = pd.DataFrame(columns=["RUBRO", "GASTO_REAL"])
 
     merged = pd.merge(df_metas, gastos_por_rubro, on="RUBRO", how="outer")
+    if rubros_filtro:
+        merged = merged[merged["RUBRO"].isin(rubros_filtro)]
+    if tipo_filtro and tipo_filtro != "Todos":
+        merged = merged[merged["TIPO"].fillna("").str.lower() == tipo_filtro.lower()]
+
     merged["MONTO_PRESUPUESTO"] = merged["MONTO_PRESUPUESTO"].fillna(0.0)
     merged["GASTO_REAL"] = merged["GASTO_REAL"].fillna(0.0)
     merged["TIPO"] = merged["TIPO"].fillna("Casa")

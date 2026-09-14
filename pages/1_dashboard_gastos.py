@@ -320,16 +320,50 @@ df_proj, proj_metrics = compute_projection_summary(
     rubros_filtro=sel_rubros
 )
 
-# --- KPIS PRINCIPALES Y PREDICTIVOS ---
-summary_budget = compute_budget_summary(df_filtered, df_presupuestos, current_user)
+# --- EVALUACIÓN DE CONTROL PRESUPUESTAL Y SEMÁFORO ---
+# Si el usuario seleccionó meses específicos en el filtro (sel_meses), se evalúan dichos meses.
+# Si NO seleccionó meses (sel_meses está vacío), se evalúa estrictamente el mes en curso/activo (target_month_proj y target_year_proj),
+# evitando comparar el gasto acumulado de todo el año contra un único mes de presupuesto mensual.
+if sel_meses:
+    df_gastos_budget = df_filtered.copy()
+    num_meses_budget = len(sel_meses)
+    if num_meses_budget == 1:
+        mes_nombre_budget = meses_labels.get(sel_meses[0], f"Mes {sel_meses[0]}")
+        label_periodo_budget = f"{mes_nombre_budget} {target_year_proj}"
+    else:
+        label_periodo_budget = f"{num_meses_budget} meses seleccionados"
+else:
+    df_gastos_budget = df_gastos[
+        (df_gastos["ANIO"] == target_year_proj) &
+        (df_gastos["MES_NUM"] == target_month_proj)
+    ].copy()
+    if sel_tipo != "Todos":
+        df_gastos_budget = df_gastos_budget[df_gastos_budget["TIPO"] == sel_tipo]
+    if sel_paga != "Todos":
+        df_gastos_budget = df_gastos_budget[df_gastos_budget["QUIEN PAGA"] == sel_paga]
+    if sel_rubros:
+        df_gastos_budget = df_gastos_budget[df_gastos_budget["RUBRO"].isin(sel_rubros)]
+        
+    num_meses_budget = 1
+    mes_nombre_budget = MESES_NOMBRE[target_month_proj - 1]
+    label_periodo_budget = f"{mes_nombre_budget} {target_year_proj}"
 
-total_gastado = df_filtered["VALOR"].sum() if not df_filtered.empty else 0.0
+summary_budget = compute_budget_summary(
+    df_gastos_budget,
+    df_presupuestos,
+    current_user,
+    tipo_filtro=sel_tipo,
+    rubros_filtro=sel_rubros,
+    num_meses=num_meses_budget
+)
+
+total_gastado_budget = df_gastos_budget["VALOR"].sum() if not df_gastos_budget.empty else 0.0
 total_presupuestado = summary_budget["MONTO_PRESUPUESTO"].sum()
-pct_global = (total_gastado / total_presupuestado * 100.0) if total_presupuestado > 0 else 0.0
+pct_global = (total_gastado_budget / total_presupuestado * 100.0) if total_presupuestado > 0 else 0.0
 
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-kpi1.metric("💰 Total Gastado", f"${total_gastado:,.0f}", border=True)
-kpi2.metric("🎯 Presupuesto Selección", f"${total_presupuestado:,.0f}", border=True)
+kpi1.metric(f"💰 Gastado ({label_periodo_budget})", f"${total_gastado_budget:,.0f}", border=True)
+kpi2.metric(f"🎯 Presupuesto ({label_periodo_budget})", f"${total_presupuestado:,.0f}", border=True)
 
 delta_color = "normal" if pct_global <= 80 else ("off" if pct_global <= 100 else "inverse")
 kpi3.metric(
@@ -494,7 +528,7 @@ st.markdown("---")
 st.subheader("🎯 Semáforo y Control Presupuestal por Rubro")
 tab_pred, tab_real = st.tabs([
     f"🔮 Proyección Predictiva ({proj_metrics['mes_nombre']} {proj_metrics['target_year']})",
-    "📊 Ejecución Real de la Selección"
+    f"📊 Ejecución Real ({label_periodo_budget})"
 ])
 
 with tab_pred:
@@ -537,12 +571,12 @@ with tab_pred:
         )
 
 with tab_real:
-    st.caption("Monitoreo de metas presupuestales con cálculo de ejecución adaptado al período consultado.")
+    st.caption(f"Monitoreo de metas presupuestales para **{label_periodo_budget}** vs Presupuesto {'Mensual' if num_meses_budget == 1 else f'de {num_meses_budget} meses'}.")
     if summary_budget.empty:
         st.info("No hay metas de presupuesto configuradas.")
     else:
         df_semaforo = summary_budget.copy()
-        df_semaforo["PROGRESO_RATIO"] = df_semaforo["PORCENTAJE_EJECUCION"] / 100.0
+        df_semaforo["PROGRESO_RATIO"] = (df_semaforo["PORCENTAJE_EJECUCION"] / 100.0).clip(lower=0.0)
         
         n_meta = len(df_semaforo[df_semaforo["PORCENTAJE_EJECUCION"] < 80])
         n_alerta = len(df_semaforo[(df_semaforo["PORCENTAJE_EJECUCION"] >= 80) & (df_semaforo["PORCENTAJE_EJECUCION"] <= 100)])
@@ -561,7 +595,7 @@ with tab_real:
                 "RUBRO": st.column_config.TextColumn("Rubro", width="medium"),
                 "COMPORTAMIENTO": st.column_config.TextColumn("Naturaleza", width="small"),
                 "TIPO": st.column_config.TextColumn("Tipo", width="small"),
-                "GASTO_REAL": st.column_config.NumberColumn("Gastado ($)", format="$%d"),
+                "GASTO_REAL": st.column_config.NumberColumn(f"Gastado {label_periodo_budget} ($)", format="$%d"),
                 "MONTO_PRESUPUESTO": st.column_config.NumberColumn("Presupuesto ($)", format="$%d"),
                 "PROGRESO_RATIO": st.column_config.ProgressColumn(
                     "% Ejecutado",
@@ -578,7 +612,7 @@ st.subheader("📊 Análisis Detallado de Gastos")
 g_col1, g_col2 = st.columns(2)
 
 with g_col1:
-    st.markdown("##### 🎯 Comparativo por Rubro (Selección Actual)")
+    st.markdown(f"##### 🎯 Comparativo por Rubro ({label_periodo_budget})")
     if not summary_budget.empty:
         fig_bar = go.Figure()
         fig_bar.add_trace(go.Bar(
@@ -638,19 +672,39 @@ with g_col3:
         st.plotly_chart(fig_payer, use_container_width=True)
 
 with g_col4:
-    st.markdown("##### 💳 Compromisos Tarjetas de Crédito por Mes")
+    st.markdown("##### 💳 Compromisos Tarjetas de Crédito por Mes (Apilado por Rubro)")
     if not df_filtered.empty and "Mes_Pago" in df_filtered.columns:
-        df_tc = df_filtered[df_filtered["PAGO"] == True]
+        df_tc = df_filtered[
+            (df_filtered["PAGO"] == True) &
+            (df_filtered["Mes_Pago"].fillna("").astype(str).str.strip() != "")
+        ].copy()
         if not df_tc.empty:
-            df_tc_mes = df_tc.groupby("Mes_Pago")["VALOR"].sum().reset_index()
+            df_tc["RUBRO"] = df_tc["RUBRO"].fillna("Otros").astype(str).str.strip()
+            df_tc["RUBRO"] = df_tc["RUBRO"].replace({"": "Otros"})
+
+            df_tc_mes = df_tc.groupby(["Mes_Pago", "RUBRO"])["VALOR"].sum().reset_index()
+
+            # Ordenar los meses cronológicamente
+            meses_en_datos = [m for m in MESES_NOMBRE if m in df_tc_mes["Mes_Pago"].unique()]
+            meses_extra = [m for m in df_tc_mes["Mes_Pago"].unique() if m not in MESES_NOMBRE]
+            orden_meses = meses_en_datos + meses_extra
+
             fig_tc = px.bar(
                 df_tc_mes,
                 x="Mes_Pago",
                 y="VALOR",
-                text_auto="$,.0f",
-                color_discrete_sequence=["#F97316"]
+                color="RUBRO",
+                barmode="stack",
+                labels={"Mes_Pago": "Mes de Pago", "VALOR": "Monto ($)", "RUBRO": "Rubro Presupuestal"},
+                color_discrete_sequence=px.colors.qualitative.Safe
             )
-            fig_tc.update_layout(height=280, margin=dict(l=10, r=10, t=20, b=20))
+            fig_tc.update_layout(
+                xaxis=dict(title="Mes de Pago", categoryorder="array", categoryarray=orden_meses),
+                yaxis=dict(title="Compromiso ($)"),
+                height=300,
+                margin=dict(l=10, r=10, t=20, b=20),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
             st.plotly_chart(fig_tc, use_container_width=True)
         else:
             st.info("No hay pagos con tarjeta de crédito registrados en la selección.")
