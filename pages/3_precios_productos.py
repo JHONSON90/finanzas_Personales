@@ -11,7 +11,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from services.auth_service import get_current_user
-from services.data_service import load_seguimiento_productos
+from services.data_service import load_seguimiento_productos, load_presupuestos, safe_parse_dates
+from services.budget_service import filter_productos_by_user
 
 st.set_page_config(
     page_title="Precios y Productos | Finanzas",
@@ -22,9 +23,11 @@ st.set_page_config(
 current_user = get_current_user()
 
 st.title("🛒 Comparador Inteligente de Precios y Productos")
-st.caption("Identifica dónde comprar más barato, monitorea variaciones de precio y analiza el gasto por proveedor.")
+st.caption(f"Usuario: **{current_user}** | Identifica dónde comprar más barato, monitorea variaciones de precio y analiza el gasto por proveedor.")
 
-df_prod = load_seguimiento_productos()
+df_presupuestos = load_presupuestos()
+df_prod_raw = load_seguimiento_productos()
+df_prod = filter_productos_by_user(df_prod_raw, df_presupuestos, current_user)
 
 if df_prod.empty:
     st.info("No hay registros de seguimiento a productos todavía. Puedes registrarlos desde el Dashboard.")

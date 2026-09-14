@@ -8,18 +8,74 @@ MESES_NOMBRE = [
 
 def filter_gastos_by_user(df_gastos: pd.DataFrame, current_user: str) -> pd.DataFrame:
     """
-    Filtra los gastos según las reglas de visibilidad:
+    Filtra los gastos según las reglas estrictas de visibilidad:
     - Gastos de Casa (TIPO == 'Casa'): Visibles para Edison y Diana.
-    - Gastos Personales (TIPO == 'Personal'): Visibles únicamente si QUIEN PAGA == current_user.
+    - Gastos Personales (TIPO == 'Personal' o cualquier otro): Visibles ÚNICAMENTE si QUIEN PAGA == current_user.
     """
-    if df_gastos.empty:
-        return df_gastos
+    if df_gastos is None or df_gastos.empty:
+        return pd.DataFrame() if df_gastos is None else df_gastos
 
-    cond_casa = df_gastos["TIPO"].str.lower() == "casa"
-    cond_personal = (df_gastos["TIPO"].str.lower() == "personal") & (df_gastos["QUIEN PAGA"].str.strip().str.lower() == current_user.lower())
-    cond_otro = ~df_gastos["TIPO"].str.lower().isin(["casa", "personal"])
-    
+    user_clean = str(current_user or "").strip().lower()
+    tipo_clean = df_gastos["TIPO"].fillna("").astype(str).str.strip().str.lower()
+    paga_clean = df_gastos["QUIEN PAGA"].fillna("").astype(str).str.strip().str.lower()
+
+    cond_casa = tipo_clean == "casa"
+    cond_personal = (tipo_clean == "personal") & (paga_clean == user_clean)
+    # Por seguridad y privacidad, cualquier gasto que no sea de casa solo lo ve quien lo pagó
+    cond_otro = (~tipo_clean.isin(["casa", "personal"])) & (paga_clean == user_clean)
+
     return df_gastos[cond_casa | cond_personal | cond_otro].copy()
+
+def filter_productos_by_user(
+    df_prod: pd.DataFrame,
+    df_presupuestos: pd.DataFrame,
+    current_user: str
+) -> pd.DataFrame:
+    """
+    Filtra los productos de Seguimiento_Productos según las reglas de visibilidad:
+    - Si el registro tiene columna 'TIPO' o 'QUIEN PAGA':
+        - Si TIPO == 'Casa': visible para ambos.
+        - Si TIPO == 'Personal': visible ÚNICAMENTE si QUIEN PAGA == current_user.
+    - Si no tiene 'TIPO'/'QUIEN PAGA', se excluyen los productos asociados a rubros personales del otro usuario.
+    """
+    if df_prod is None or df_prod.empty:
+        return pd.DataFrame() if df_prod is None else df_prod
+
+    user_clean = str(current_user or "").strip().lower()
+    df_p = df_prod.copy()
+
+    # Identificar rubros personales del OTRO usuario en df_presupuestos
+    rubros_otro_usuario = set()
+    if df_presupuestos is not None and not df_presupuestos.empty:
+        if "TIPO" in df_presupuestos.columns and "USUARIO" in df_presupuestos.columns and "RUBRO" in df_presupuestos.columns:
+            mask_otro = (
+                (df_presupuestos["TIPO"].fillna("").astype(str).str.lower() == "personal") &
+                (df_presupuestos["USUARIO"].fillna("").astype(str).str.lower() != user_clean) &
+                (df_presupuestos["USUARIO"].fillna("").astype(str).str.lower() != "todos")
+            )
+            rubros_otro_usuario = set(
+                df_presupuestos.loc[mask_otro, "RUBRO"].dropna().astype(str).str.strip().str.lower()
+            )
+
+    # 1. Si el dataframe tiene columnas de TIPO y QUIEN PAGA
+    if "TIPO" in df_p.columns and "QUIEN PAGA" in df_p.columns:
+        tipo_clean = df_p["TIPO"].fillna("").astype(str).str.strip().str.lower()
+        paga_clean = df_p["QUIEN PAGA"].fillna("").astype(str).str.strip().str.lower()
+        
+        cond_casa = tipo_clean == "casa"
+        cond_personal = (tipo_clean == "personal") & (paga_clean == user_clean)
+        cond_otro = (~tipo_clean.isin(["casa", "personal"])) & (paga_clean == user_clean)
+        cond_sin_marcar = (tipo_clean == "") & (~df_p["RUBRO"].fillna("").astype(str).str.strip().str.lower().isin(rubros_otro_usuario))
+        
+        return df_p[cond_casa | cond_personal | cond_otro | cond_sin_marcar].copy()
+
+    # 2. Si no tiene TIPO/QUIEN PAGA, excluir rubros personales del otro usuario
+    if "RUBRO" in df_p.columns and rubros_otro_usuario:
+        rubro_clean = df_p["RUBRO"].fillna("").astype(str).str.strip().str.lower()
+        df_p = df_p[~rubro_clean.isin(rubros_otro_usuario)].copy()
+
+    return df_p
+
 
 def get_available_rubros(df_presupuestos: pd.DataFrame, tipo: str, current_user: str) -> List[str]:
     """Retorna la lista de rubros disponibles según el tipo de gasto y el usuario activo."""

@@ -20,6 +20,7 @@ from services.data_service import (
 )
 from services.budget_service import (
     filter_gastos_by_user,
+    filter_productos_by_user,
     compute_annual_summary,
     compute_annual_rankings,
     compute_monthly_evolution,
@@ -39,7 +40,9 @@ df_gastos_raw = load_gastos()
 df_presupuestos = load_presupuestos()
 df_prod_raw = load_seguimiento_productos()
 
+# Filtrar con regla estricta de privacidad: Casa (ambos) + Personal (solo usuario activo)
 df_gastos = filter_gastos_by_user(df_gastos_raw, current_user)
+df_prod = filter_productos_by_user(df_prod_raw, df_presupuestos, current_user)
 
 if not df_gastos.empty:
     if "FECHA_DT" not in df_gastos.columns:
@@ -50,11 +53,11 @@ if not df_gastos.empty:
 else:
     anios_gastos = []
 
-if not df_prod_raw.empty:
-    if "FECHA_DT" not in df_prod_raw.columns:
-        df_prod_raw["FECHA_DT"] = safe_parse_dates(df_prod_raw["FECHA"])
-    df_prod_raw["ANIO"] = df_prod_raw["FECHA_DT"].dt.year
-    anios_prod = df_prod_raw["ANIO"].dropna().astype(int).unique().tolist()
+if not df_prod.empty:
+    if "FECHA_DT" not in df_prod.columns:
+        df_prod["FECHA_DT"] = safe_parse_dates(df_prod["FECHA"])
+    df_prod["ANIO"] = df_prod["FECHA_DT"].dt.year
+    anios_prod = df_prod["ANIO"].dropna().astype(int).unique().tolist()
 else:
     anios_prod = []
 
@@ -263,7 +266,7 @@ with tab_rankings:
     st.subheader(f"🏆 Rankings de Compras en {sel_anio} (Top {top_n})")
     st.caption("Productos con mayor impacto en el bolsillo y comercios donde más se concentró la facturación.")
 
-    top_prods, top_provs = compute_annual_rankings(df_prod_raw, selected_year=int(sel_anio), top_n=top_n)
+    top_prods, top_provs = compute_annual_rankings(df_prod, selected_year=int(sel_anio), top_n=top_n)
 
     r_col1, r_col2 = st.columns(2)
 

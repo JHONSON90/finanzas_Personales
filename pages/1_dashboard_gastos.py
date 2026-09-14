@@ -194,6 +194,8 @@ def modal_seguimiento_productos():
     productos_validos["FECHA"] = fecha_str
     productos_validos["PROVEEDOR"] = proveedor_final if proveedor_final else "Varios"
     productos_validos["RUBRO"] = productos_validos["RUBRO"].fillna(rubro_principal)
+    productos_validos["QUIEN PAGA"] = pago_realizado
+    productos_validos["TIPO"] = tipo
 
     valor_total_compra = productos_validos["VALOR TOTAL"].sum()
     st.metric("Total de la Compra", f"${valor_total_compra:,.2f}", border=True)
