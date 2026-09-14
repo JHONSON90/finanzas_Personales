@@ -464,3 +464,144 @@ def compute_monthly_evolution(
         }]
 
     return pd.DataFrame(filas)
+
+def compute_annual_summary(
+    df_gastos_visibles: pd.DataFrame,
+    df_presupuestos: pd.DataFrame,
+    current_user: str,
+    selected_year: int,
+    tipo_filtro: Optional[str] = None
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Consolida el seguimiento global anual de gastos:
+    - Presupuesto Anual = Presupuesto Mensual Base * 12
+    - Real Anual = Suma de gastos ejecutados en el año seleccionado
+    - Variación = Real Anual - Presupuesto Anual
+    - % Ejecución = (Real Anual / Presupuesto Anual) * 100 con control de nulos y división por cero
+    """
+    try:
+        df_g = df_gastos_visibles.copy() if df_gastos_visibles is not None else pd.DataFrame()
+        if not df_g.empty:
+            if "FECHA_DT" not in df_g.columns:
+                df_g["FECHA_DT"] = pd.to_datetime(df_g["FECHA"], errors="coerce")
+            df_g["ANIO"] = df_g["FECHA_DT"].dt.year
+            df_anio = df_g[df_g["ANIO"] == int(selected_year)].copy()
+        else:
+            df_anio = pd.DataFrame()
+
+        if tipo_filtro and str(tipo_filtro).lower() != "todos" and not df_anio.empty:
+            df_anio = df_anio[df_anio["TIPO"].fillna("").astype(str).str.lower() == str(tipo_filtro).lower()]
+
+        summary = compute_budget_summary(
+            df_anio,
+            df_presupuestos,
+            current_user,
+            tipo_filtro=tipo_filtro,
+            num_meses=12
+        )
+
+        presup_total = float(summary["MONTO_PRESUPUESTO"].sum()) if not summary.empty else 0.0
+        real_total = float(summary["GASTO_REAL"].sum()) if not summary.empty else 0.0
+        variacion_total = real_total - presup_total
+        pct_total = (real_total / presup_total * 100.0) if presup_total > 0 else 0.0
+
+        if not summary.empty:
+            summary["VARIACION"] = summary["GASTO_REAL"] - summary["MONTO_PRESUPUESTO"]
+        else:
+            summary["VARIACION"] = 0.0
+
+        metrics = {
+            "selected_year": int(selected_year),
+            "presupuesto_anual": presup_total,
+            "real_anual": real_total,
+            "variacion": variacion_total,
+            "pct_ejecucion": pct_total,
+            "total_registros": len(df_anio)
+        }
+        return summary, metrics
+    except Exception as e:
+        empty_df = pd.DataFrame(columns=[
+            "RUBRO", "TIPO", "USUARIO", "MONTO_PRESUPUESTO",
+            "COMPORTAMIENTO", "GASTO_REAL", "DIFERENCIA", "VARIACION",
+            "PORCENTAJE_EJECUCION", "ESTADO", "COLOR"
+        ])
+        metrics = {
+            "selected_year": int(selected_year),
+            "presupuesto_anual": 0.0,
+            "real_anual": 0.0,
+            "variacion": 0.0,
+            "pct_ejecucion": 0.0,
+            "total_registros": 0
+        }
+        return empty_df, metrics
+
+def compute_annual_rankings(
+    df_prod: pd.DataFrame,
+    selected_year: int,
+    top_n: int = 10
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Identifica los Top N productos más costosos y Top N proveedores por gasto acumulado en el año.
+    """
+    top_n = max(1, int(top_n)) if top_n else 10
+    if df_prod is None or df_prod.empty:
+        empty_prod = pd.DataFrame(columns=["PRODUCTO", "VALOR TOTAL", "CANTIDAD", "PRECIO_PROM"])
+        empty_prov = pd.DataFrame(columns=["PROVEEDOR", "VALOR TOTAL", "NUM_COMPRAS"])
+        return empty_prod, empty_prov
+
+    df_p = df_prod.copy()
+    if "FECHA_DT" not in df_p.columns:
+        df_p["FECHA_DT"] = pd.to_datetime(df_p["FECHA"], errors="coerce")
+    df_p["ANIO"] = df_p["FECHA_DT"].dt.year
+
+    df_p_anio = df_p[df_p["ANIO"] == int(selected_year)].copy()
+    if df_p_anio.empty:
+        empty_prod = pd.DataFrame(columns=["PRODUCTO", "VALOR TOTAL", "CANTIDAD", "PRECIO_PROM"])
+        empty_prov = pd.DataFrame(columns=["PROVEEDOR", "VALOR TOTAL", "NUM_COMPRAS"])
+        return empty_prod, empty_prov
+
+    for col in ["VALOR TOTAL", "CANTIDAD", "VALOR UNT"]:
+        if col in df_p_anio.columns:
+            df_p_anio[col] = pd.to_numeric(df_p_anio[col], errors="coerce").fillna(0.0)
+
+    # 1. Top Productos
+    df_valid_prod = df_p_anio.dropna(subset=["PRODUCTO"]).copy()
+    df_valid_prod["PRODUCTO"] = df_valid_prod["PRODUCTO"].astype(str).str.strip()
+    df_valid_prod = df_valid_prod[df_valid_prod["PRODUCTO"] != ""]
+    
+    if not df_valid_prod.empty:
+        agg_dict = {"VALOR TOTAL": "sum"}
+        if "CANTIDAD" in df_valid_prod.columns:
+            agg_dict["CANTIDAD"] = "sum"
+        if "VALOR UNT" in df_valid_prod.columns:
+            agg_dict["VALOR UNT"] = "mean"
+            
+        top_productos = (
+            df_valid_prod.groupby("PRODUCTO")
+            .agg(agg_dict)
+            .reset_index()
+            .rename(columns={"VALOR UNT": "PRECIO_PROM"})
+            .sort_values(by="VALOR TOTAL", ascending=False)
+            .head(top_n)
+        )
+    else:
+        top_productos = pd.DataFrame(columns=["PRODUCTO", "VALOR TOTAL", "CANTIDAD", "PRECIO_PROM"])
+
+    # 2. Top Proveedores
+    df_valid_prov = df_p_anio.dropna(subset=["PROVEEDOR"]).copy()
+    df_valid_prov["PROVEEDOR"] = df_valid_prov["PROVEEDOR"].astype(str).str.strip()
+    df_valid_prov = df_valid_prov[~df_valid_prov["PROVEEDOR"].str.lower().isin(["", "none", "nan", "varios", "null"])]
+
+    if not df_valid_prov.empty:
+        top_proveedores = (
+            df_valid_prov.groupby("PROVEEDOR")
+            .agg({"VALOR TOTAL": "sum", "PRODUCTO": "count"})
+            .reset_index()
+            .rename(columns={"PRODUCTO": "NUM_COMPRAS"})
+            .sort_values(by="VALOR TOTAL", ascending=False)
+            .head(top_n)
+        )
+    else:
+        top_proveedores = pd.DataFrame(columns=["PROVEEDOR", "VALOR TOTAL", "NUM_COMPRAS"])
+
+    return top_productos, top_proveedores

@@ -43,6 +43,7 @@ def unauthorized_screen():
 p_dashboard = st.Page("pages/1_dashboard_gastos.py", title="Dashboard y Gastos", icon="📊", default=True)
 p_presupuesto = st.Page("pages/2_presupuestos_metas.py", title="Presupuestos y Metas", icon="🎯")
 p_productos = st.Page("pages/3_precios_productos.py", title="Precios y Productos", icon="🛒")
+p_anual = st.Page("pages/4_seguimiento_anual.py", title="Seguimiento Anual", icon="📈")
 
 login_page = st.Page(login_screen, title="Iniciar Sesión", icon="🔐")
 logout_page = st.Page(logout_screen, title="Cerrar Sesión", icon="🚪")
@@ -57,7 +58,7 @@ if hasattr(st, "user") and getattr(st.user, "is_logged_in", False):
         st.sidebar.caption(f"Usuario: `{current_user}` | Email: `{email}`")
         st.sidebar.button("Cerrar sesión", on_click=st.logout, key="btn_logout_sidebar")
         
-        pages = [p_dashboard, p_presupuesto, p_productos, logout_page]
+        pages = [p_dashboard, p_presupuesto, p_productos, p_anual, logout_page]
         pg = st.navigation(pages)
     else:
         pg = st.navigation([unauth_page, logout_page])
