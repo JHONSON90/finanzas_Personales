@@ -286,3 +286,32 @@ def save_presupuestos(df: pd.DataFrame) -> bool:
     except Exception as e:
         st.error(f"Error al guardar en hoja Presupuestos: {e}")
         return False
+
+def get_unique_providers() -> list[str]:
+    """
+    Obtiene la lista consolidada de proveedores conocidos desde la hoja 'Seguimiento_Productos'
+    y la combina con comercios habituales y entradas personalizadas en la sesión actual.
+    """
+    defaults = ["D1", "Éxito", "Alkosto", "Jumbo", "Olímpica", "Ara", "Carulla", "Farmatodo"]
+    try:
+        df_prod = load_seguimiento_productos()
+        if not df_prod.empty and "PROVEEDOR" in df_prod.columns:
+            cleaned = [
+                str(p).strip()
+                for p in df_prod["PROVEEDOR"].dropna().unique()
+                if str(p).strip() and str(p).strip().lower() not in ["none", "nan", "varios", "null", "otro"]
+            ]
+            defaults.extend(cleaned)
+    except Exception:
+        pass
+
+    if "custom_providers" in st.session_state and isinstance(st.session_state["custom_providers"], list):
+        defaults.extend(st.session_state["custom_providers"])
+
+    seen = {}
+    for p in defaults:
+        p_clean = p.strip()
+        if p_clean and p_clean.lower() not in seen:
+            seen[p_clean.lower()] = p_clean
+
+    return sorted(list(seen.values()), key=lambda s: s.lower())

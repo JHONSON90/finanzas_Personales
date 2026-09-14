@@ -17,6 +17,7 @@ from services.data_service import (
     load_gastos,
     load_presupuestos,
     load_seguimiento_productos,
+    get_unique_providers,
     add_single_gasto,
     add_compra_con_productos,
     safe_parse_dates
@@ -145,7 +146,17 @@ def modal_seguimiento_productos():
         rubros_disponibles = get_available_rubros(df_presupuestos, tipo, current_user)
         rubro_principal = st.selectbox("🎯 Rubro Principal", rubros_disponibles)
     with col5:
-        proveedor = st.text_input("🏭 Proveedor / Tienda", placeholder="Ej. Éxito, D1, Olímpica")
+        proveedores_disponibles = get_unique_providers()
+        opciones_proveedor = proveedores_disponibles + ["➕ Agregar nuevo proveedor..."]
+        idx_default = opciones_proveedor.index("D1") if "D1" in opciones_proveedor else 0
+        proveedor_sel = st.selectbox("🏭 Proveedor / Tienda", opciones_proveedor, index=idx_default)
+
+        if proveedor_sel == "➕ Agregar nuevo proveedor...":
+            nuevo_proveedor = st.text_input("✍️ Nombre del Nuevo Proveedor", placeholder="Ej. Frutería El Vergel")
+            proveedor_final = nuevo_proveedor.strip()
+        else:
+            proveedor_final = proveedor_sel
+
         pago_tc = st.toggle("💳 ¿Pago con Tarjeta de Crédito?", value=False)
         mes_pago = st.selectbox("📅 Mes de Pago TC", [""] + MESES_NOMBRE, disabled=not pago_tc)
 
@@ -157,6 +168,7 @@ def modal_seguimiento_productos():
         df_base,
         num_rows="dynamic",
         width="stretch",
+        key="editor_detalle_compra",
         column_config={
             "PRODUCTO": st.column_config.TextColumn("Producto", width="medium", required=True),
             "CANTIDAD": st.column_config.NumberColumn("Cantidad", min_value=1, default=1, required=True),
@@ -180,7 +192,7 @@ def modal_seguimiento_productos():
     productos_validos = productos_validos[productos_validos["PRODUCTO"].astype(str).str.strip() != ""]
     fecha_str = fecha.strftime("%Y-%m-%d")
     productos_validos["FECHA"] = fecha_str
-    productos_validos["PROVEEDOR"] = proveedor.strip() if proveedor.strip() else "Varios"
+    productos_validos["PROVEEDOR"] = proveedor_final if proveedor_final else "Varios"
     productos_validos["RUBRO"] = productos_validos["RUBRO"].fillna(rubro_principal)
 
     valor_total_compra = productos_validos["VALOR TOTAL"].sum()
@@ -188,15 +200,25 @@ def modal_seguimiento_productos():
 
     st.markdown("---")
     if st.button("💾 Guardar Compra Completa", type="primary", use_container_width=True):
+        if not proveedor_final:
+            st.error("Por favor ingresa o selecciona un proveedor válido.")
+            return
+
         if valor_total_compra <= 0 or productos_validos.empty:
             st.error("Debes ingresar al menos un producto con precio y cantidad válidos.")
             return
+
+        if proveedor_sel == "➕ Agregar nuevo proveedor..." and proveedor_final:
+            if "custom_providers" not in st.session_state:
+                st.session_state["custom_providers"] = []
+            if proveedor_final not in st.session_state["custom_providers"]:
+                st.session_state["custom_providers"].append(proveedor_final)
 
         new_gasto = {
             "FECHA": fecha_str,
             "QUIEN PAGA": pago_realizado,
             "TIPO": tipo,
-            "CONCEPTO": f"Compra {proveedor} ({len(productos_validos)} productos)".strip(),
+            "CONCEPTO": f"Compra {proveedor_final} ({len(productos_validos)} productos)".strip(),
             "CLASIFICACION": clasificacion,
             "RUBRO": rubro_principal,
             "VALOR": float(valor_total_compra),
@@ -206,6 +228,8 @@ def modal_seguimiento_productos():
 
         with st.spinner("Guardando en Google Sheets..."):
             if add_compra_con_productos(productos_validos, new_gasto):
+                if "editor_detalle_compra" in st.session_state:
+                    del st.session_state["editor_detalle_compra"]
                 st.success("✅ ¡Compra y productos guardados con éxito!")
                 time.sleep(1.2)
                 st.rerun()
