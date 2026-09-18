@@ -681,7 +681,7 @@ with g_col3:
         st.plotly_chart(fig_payer, width='stretch')
 
 with g_col4:
-    st.markdown("##### 💳 Compromisos Tarjetas de Crédito por Mes (Apilado por Rubro)")
+    st.markdown("##### 💳 Compromisos Tarjetas de Crédito por Mes")
     if not df_filtered.empty and "Mes_Pago" in df_filtered.columns:
         df_tc = df_filtered[
             (df_filtered["PAGO"] == True) &
@@ -691,30 +691,104 @@ with g_col4:
             df_tc["RUBRO"] = df_tc["RUBRO"].fillna("Otros").astype(str).str.strip()
             df_tc["RUBRO"] = df_tc["RUBRO"].replace({"": "Otros"})
 
-            df_tc_mes = df_tc.groupby(["Mes_Pago", "RUBRO"])["VALOR"].sum().reset_index()
-
-            # Ordenar los meses cronológicamente
-            meses_en_datos = [m for m in MESES_NOMBRE if m in df_tc_mes["Mes_Pago"].unique()]
-            meses_extra = [m for m in df_tc_mes["Mes_Pago"].unique() if m not in MESES_NOMBRE]
+            # Orden cronológico de meses
+            meses_en_datos = [m for m in MESES_NOMBRE if m in df_tc["Mes_Pago"].unique()]
+            meses_extra = [m for m in df_tc["Mes_Pago"].unique() if m not in MESES_NOMBRE]
             orden_meses = meses_en_datos + meses_extra
 
-            fig_tc = px.bar(
-                df_tc_mes,
-                x="Mes_Pago",
-                y="VALOR",
-                color="RUBRO",
-                barmode="stack",
-                labels={"Mes_Pago": "Mes de Pago", "VALOR": "Monto ($)", "RUBRO": "Rubro Presupuestal"},
-                color_discrete_sequence=px.colors.qualitative.Safe
-            )
-            fig_tc.update_layout(
-                xaxis=dict(title="Mes de Pago", categoryorder="array", categoryarray=orden_meses),
-                yaxis=dict(title="Compromiso ($)"),
-                height=300,
-                margin=dict(l=10, r=10, t=20, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            st.plotly_chart(fig_tc, width='stretch')
+            tab_graf_tc, tab_tabla_tc = st.tabs(["📊 Gráfica", "📋 Total por Mes (Tabla)"])
+
+            with tab_graf_tc:
+                modo_vista_tc = st.radio(
+                    "Vista de gráfica TC",
+                    options=["Apilado por Rubro", "Total por Mes (Con Monto)"],
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="modo_vista_tc"
+                )
+
+                if modo_vista_tc == "Apilado por Rubro":
+                    df_tc_mes = df_tc.groupby(["Mes_Pago", "RUBRO"])["VALOR"].sum().reset_index()
+                    fig_tc = px.bar(
+                        df_tc_mes,
+                        x="Mes_Pago",
+                        y="VALOR",
+                        color="RUBRO",
+                        barmode="stack",
+                        labels={"Mes_Pago": "Mes de Pago", "VALOR": "Monto ($)", "RUBRO": "Rubro Presupuestal"},
+                        color_discrete_sequence=px.colors.qualitative.Safe
+                    )
+                    fig_tc.update_layout(
+                        xaxis=dict(title="Mes de Pago", categoryorder="array", categoryarray=orden_meses),
+                        yaxis=dict(title="Compromiso ($)"),
+                        height=280,
+                        margin=dict(l=10, r=10, t=15, b=20),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    )
+                    st.plotly_chart(fig_tc, width='stretch')
+                else:
+                    df_tc_tot = df_tc.groupby("Mes_Pago")["VALOR"].sum().reset_index()
+                    fig_tc = px.bar(
+                        df_tc_tot,
+                        x="Mes_Pago",
+                        y="VALOR",
+                        text_auto="$,.0f",
+                        labels={"Mes_Pago": "Mes de Pago", "VALOR": "Total ($)"},
+                        color_discrete_sequence=["#3B82F6"]
+                    )
+                    fig_tc.update_traces(
+                        textposition="outside",
+                        cliponaxis=False
+                    )
+                    fig_tc.update_layout(
+                        xaxis=dict(title="Mes de Pago", categoryorder="array", categoryarray=orden_meses),
+                        yaxis=dict(title="Total Compromiso ($)"),
+                        height=280,
+                        margin=dict(l=10, r=10, t=25, b=20)
+                    )
+                    st.plotly_chart(fig_tc, width='stretch')
+
+            with tab_tabla_tc:
+                # Resumen mensual total
+                df_tc_resumen = df_tc.groupby("Mes_Pago").agg(
+                    TOTAL_COMPROMISO=("VALOR", "sum"),
+                    CANTIDAD_COMPRAS=("VALOR", "count")
+                ).reset_index()
+
+                # Encontrar rubro principal por mes
+                def get_top_rubro(sub_df):
+                    if sub_df.empty:
+                        return "N/A"
+                    return sub_df.groupby("RUBRO")["VALOR"].sum().idxmax()
+
+                top_rubros = df_tc.groupby("Mes_Pago", group_keys=False).apply(get_top_rubro, include_groups=False).reset_index(name="RUBRO_MAYOR")
+                df_tc_resumen = df_tc_resumen.merge(top_rubros, on="Mes_Pago", how="left")
+
+                # Ordenar cronológicamente
+                df_tc_resumen["_orden"] = df_tc_resumen["Mes_Pago"].apply(
+                    lambda m: MESES_NOMBRE.index(m) if m in MESES_NOMBRE else 99
+                )
+                df_tc_resumen = df_tc_resumen.sort_values(by="_orden").drop(columns=["_orden"])
+
+                tot_tc_general = df_tc_resumen["TOTAL_COMPROMISO"].sum()
+                prom_tc_general = df_tc_resumen["TOTAL_COMPROMISO"].mean() if not df_tc_resumen.empty else 0.0
+
+                m_col1, m_col2 = st.columns(2)
+                m_col1.metric("💳 Total Compromisos", f"${tot_tc_general:,.0f}")
+                m_col2.metric("📅 Promedio por Mes", f"${prom_tc_general:,.0f}")
+
+                st.dataframe(
+                    df_tc_resumen,
+                    width="stretch",
+                    hide_index=True,
+                    height=200,
+                    column_config={
+                        "Mes_Pago": st.column_config.TextColumn("Mes de Pago"),
+                        "TOTAL_COMPROMISO": st.column_config.NumberColumn("Gasto Total ($)", format="$%d"),
+                        "CANTIDAD_COMPRAS": st.column_config.NumberColumn("N° Compras", format="%d"),
+                        "RUBRO_MAYOR": st.column_config.TextColumn("Mayor Gasto En")
+                    }
+                )
         else:
             st.info("No hay pagos con tarjeta de crédito registrados en la selección.")
 
