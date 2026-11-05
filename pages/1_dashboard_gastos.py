@@ -19,6 +19,7 @@ from services.data_service import (
     load_seguimiento_productos,
     get_unique_providers,
     add_single_gasto,
+    add_batch_gastos,
     add_compra_con_productos,
     safe_parse_dates
 )
@@ -29,6 +30,8 @@ from services.budget_service import (
     compute_projection_summary,
     compute_trajectory_data,
     compute_monthly_evolution,
+    get_stipulated_expenses_with_budgets,
+    check_payment_status,
     MESES_NOMBRE
 )
 
@@ -321,6 +324,125 @@ df_proj, proj_metrics = compute_projection_summary(
     tipo_filtro=sel_tipo,
     rubros_filtro=sel_rubros
 )
+
+# =========================================================================
+# 📋 CHECKLIST DE CUENTAS Y PAGOS ESTIPULADOS DEL MES (SIN FORMULARIOS)
+# =========================================================================
+mes_nombre_actual = MESES_NOMBRE[target_month_proj - 1]
+st.markdown("---")
+st.subheader(f"📋 Cuentas y Pagos Estipulados — {mes_nombre_actual} {target_year_proj}")
+st.caption(f"Cuentas asignadas a **{current_user}**. Marca el visto en las que vas a pagar y haz clic en **'Descargar seleccionados'**, o usa el botón individual para pagar en 1 solo clic.")
+
+cuentas_usuario = get_stipulated_expenses_with_budgets(df_presupuestos, current_user)
+
+if cuentas_usuario:
+    cuentas_con_estado = []
+    for it in cuentas_usuario:
+        st_pago = check_payment_status(df_gastos, it, target_year_proj, target_month_proj)
+        item_dict = dict(it)
+        item_dict.update(st_pago)
+        cuentas_con_estado.append(item_dict)
+
+    pendientes = [c for c in cuentas_con_estado if not c["is_paid"]]
+    pagadas = [c for c in cuentas_con_estado if c["is_paid"]]
+
+    m_tot = sum(c["monto_efectivo"] for c in cuentas_con_estado)
+    m_pag = sum(c["total_paid"] for c in pagadas)
+    m_pen = sum(c["monto_efectivo"] for c in pendientes)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Compromisos Asignados", f"${m_tot:,.0f}", f"{len(cuentas_con_estado)} cuentas")
+    c2.metric("Pagado al Momento", f"${m_pag:,.0f}", f"{len(pagadas)} pagadas", delta_color="normal")
+    c3.metric("Pendiente por Descargar", f"${m_pen:,.0f}", f"{len(pendientes)} pendientes", delta_color="inverse")
+
+    hoy_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Sección Cuentas Pendientes
+    if pendientes:
+        st.markdown("##### ⏳ Cuentas Pendientes de Pago")
+        cuentas_marcadas = []
+
+        for it in pendientes:
+            with st.container(border=True):
+                col_chk, col_det, col_val, col_act = st.columns([0.6, 4, 2.2, 2.2])
+                with col_chk:
+                    is_chk = st.checkbox(
+                        "Seleccionar",
+                        key=f"chk_fijo_{it['id']}_{target_year_proj}_{target_month_proj}",
+                        label_visibility="collapsed"
+                    )
+                    if is_chk:
+                        cuentas_marcadas.append(it)
+                with col_det:
+                    st.markdown(f"**{it['rubro']}**")
+                    st.caption(f"{it['tipo']} · {it['clasificacion']}")
+                with col_val:
+                    st.markdown(f"**${it['monto_efectivo']:,.0f}**")
+                    if it.get("monto_base") and it["monto_efectivo"] != it["monto_base"]:
+                        st.caption(f"Base: ${it['monto_base']:,.0f}")
+                with col_act:
+                    if st.button("⚡ Pagar / Descargar", key=f"btn_pay_{it['id']}_{target_year_proj}_{target_month_proj}", type="secondary", use_container_width=True):
+                        gasto_data = {
+                            "FECHA": hoy_str,
+                            "QUIEN PAGA": it["responsable"],
+                            "TIPO": it["tipo"],
+                            "CONCEPTO": f"[Fijo] {it['concepto_base']} - {mes_nombre_actual} {target_year_proj}",
+                            "CLASIFICACION": it["clasificacion"],
+                            "RUBRO": it["rubro"],
+                            "VALOR": float(it["monto_efectivo"]),
+                            "PAGO": False,
+                            "Mes_Pago": ""
+                        }
+                        with st.spinner("Descargando gasto..."):
+                            if add_single_gasto(gasto_data):
+                                st.toast(f"✅ ¡{it['rubro']} registrado como pagado!")
+                                time.sleep(1)
+                                st.rerun()
+
+        # Botón de acción masiva
+        col_btn1, col_btn2 = st.columns([1.5, 2.5])
+        with col_btn1:
+            if st.button(f"🚀 Descargar Seleccionados ({len(cuentas_marcadas)})", type="primary", use_container_width=True, disabled=(len(cuentas_marcadas) == 0)):
+                batch_items = [
+                    {
+                        "FECHA": hoy_str,
+                        "QUIEN PAGA": it["responsable"],
+                        "TIPO": it["tipo"],
+                        "CONCEPTO": f"[Fijo] {it['concepto_base']} - {mes_nombre_actual} {target_year_proj}",
+                        "CLASIFICACION": it["clasificacion"],
+                        "RUBRO": it["rubro"],
+                        "VALOR": float(it["monto_efectivo"]),
+                        "PAGO": False,
+                        "Mes_Pago": ""
+                    }
+                    for it in cuentas_marcadas
+                ]
+                with st.spinner(f"Registrando {len(batch_items)} cuentas en Google Sheets..."):
+                    if add_batch_gastos(batch_items):
+                        st.toast(f"🎉 ¡{len(batch_items)} cuentas descargadas y pagadas con éxito!")
+                        time.sleep(1.2)
+                        st.rerun()
+    else:
+        st.success("🎉 ¡Excelente! Todas tus cuentas estipuladas para este mes ya han sido pagadas.")
+
+    # Sección Cuentas ya Pagadas
+    if pagadas:
+        with st.expander(f"✅ Ver Cuentas ya Pagadas en este Mes ({len(pagadas)})", expanded=False):
+            for it in pagadas:
+                with st.container(border=True):
+                    col_b, col_info, col_p, col_st = st.columns([0.6, 4, 2.2, 2.2])
+                    with col_b:
+                        st.markdown("### 🟢")
+                    with col_info:
+                        fechas_str = ", ".join(it.get("fechas", []))
+                        st.markdown(f"**{it['rubro']}**")
+                        st.caption(f"Pagado el: {fechas_str if fechas_str else 'Mes actual'}")
+                    with col_p:
+                        st.markdown(f"**${it['total_paid']:,.0f}**")
+                    with col_st:
+                        st.button("Pagado", disabled=True, key=f"done_{it['id']}_{target_year_proj}_{target_month_proj}", use_container_width=True)
+else:
+    st.info(f"No hay cuentas estipuladas configuradas para el usuario {current_user}.")
 
 # --- EVALUACIÓN DE CONTROL PRESUPUESTAL Y SEMÁFORO ---
 # Si el usuario seleccionó meses específicos en el filtro (sel_meses), se evalúan dichos meses.

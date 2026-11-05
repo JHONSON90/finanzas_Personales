@@ -661,3 +661,173 @@ def compute_annual_rankings(
         top_proveedores = pd.DataFrame(columns=["PROVEEDOR", "VALOR TOTAL", "NUM_COMPRAS"])
 
     return top_productos, top_proveedores
+
+def get_stipulated_expenses_with_budgets(
+    df_presupuestos: pd.DataFrame,
+    current_user: str
+) -> List[Dict[str, Any]]:
+    """
+    Retorna la lista de gastos estipulados correspondientes a current_user,
+    incorporando el monto presupuestado actualizado (monto_efectivo) según df_presupuestos.
+    Si no existe en presupuestos o su monto es <= 0, toma el monto_base definido en el catálogo.
+    """
+    from services.data_service import CATALOGO_PAGOS_ESTIPULADOS
+
+    user_clean = str(current_user or "").strip().lower()
+
+    # 1. Filtrar catálogo por responsable coincidente con current_user
+    user_items = [
+        dict(item) for item in CATALOGO_PAGOS_ESTIPULADOS
+        if str(item.get("responsable", "")).strip().lower() == user_clean
+    ]
+
+    if not user_items:
+        return []
+
+    # 2. Si df_presupuestos no está disponible o está vacío, asignar monto_base
+    if df_presupuestos is None or df_presupuestos.empty:
+        for item in user_items:
+            item["monto_efectivo"] = float(item.get("monto_base", 0.0))
+        return user_items
+
+    # 3. Normalizar columnas de df_presupuestos para búsqueda segura
+    col_map = {str(c).upper().strip(): c for c in df_presupuestos.columns}
+    rubro_col = col_map.get("RUBRO")
+    monto_col = col_map.get("MONTO_PRESUPUESTO")
+    tipo_col = col_map.get("TIPO")
+    user_col = col_map.get("USUARIO")
+    activo_col = col_map.get("ACTIVO")
+
+    if not rubro_col or not monto_col:
+        for item in user_items:
+            item["monto_efectivo"] = float(item.get("monto_base", 0.0))
+        return user_items
+
+    rubro_series = df_presupuestos[rubro_col].fillna("").astype(str).str.strip().str.lower()
+    tipo_series = df_presupuestos[tipo_col].fillna("").astype(str).str.strip().str.lower() if tipo_col else pd.Series([""] * len(df_presupuestos), index=df_presupuestos.index)
+    user_series = df_presupuestos[user_col].fillna("").astype(str).str.strip().str.lower() if user_col else pd.Series(["todos"] * len(df_presupuestos), index=df_presupuestos.index)
+    montos_numeric = pd.to_numeric(df_presupuestos[monto_col], errors="coerce").fillna(0.0)
+
+    for item in user_items:
+        item_rubro = str(item.get("rubro", "")).strip().lower()
+        item_tipo = str(item.get("tipo", "")).strip().lower()
+        monto_base = float(item.get("monto_base", 0.0))
+
+        # Coincidencia por rubro y tipo/usuario (o 'Todos' para Casa)
+        if item_tipo == "casa":
+            mask = (rubro_series == item_rubro) & (tipo_series == "casa") & (user_series.isin(["todos", user_clean, ""]))
+            if not mask.any():
+                mask = (rubro_series == item_rubro) & (tipo_series == "casa")
+            if not mask.any():
+                mask = (rubro_series == item_rubro)
+        else:  # personal
+            mask = (rubro_series == item_rubro) & (tipo_series == "personal") & (user_series == user_clean)
+            if not mask.any():
+                mask = (rubro_series == item_rubro) & (user_series == user_clean)
+            if not mask.any():
+                mask = (rubro_series == item_rubro)
+
+        monto_efectivo = monto_base
+        if mask.any():
+            # Si existe columna ACTIVO, priorizar registros activos
+            if activo_col:
+                mask_activo = mask & (df_presupuestos[activo_col] == True)
+                sub_mask = mask_activo if mask_activo.any() else mask
+            else:
+                sub_mask = mask
+
+            vals = montos_numeric[sub_mask]
+            if not vals.empty:
+                val = float(vals.iloc[0])
+                if val > 0:
+                    monto_efectivo = val
+
+        item["monto_efectivo"] = monto_efectivo
+
+    return user_items
+
+def check_payment_status(
+    df_gastos: pd.DataFrame,
+    item: Dict[str, Any],
+    target_year: int,
+    target_month: int
+) -> Dict[str, Any]:
+    """
+    Verifica si en df_gastos existe algún registro pagado en el año target_year y mes target_month
+    para el rubro y responsable especificados en item.
+    Retorna un diccionario con is_paid, total_paid, fechas y count.
+    """
+    if df_gastos is None or df_gastos.empty:
+        return {
+            "is_paid": False,
+            "total_paid": 0.0,
+            "fechas": [],
+            "count": 0
+        }
+
+    col_map = {str(c).upper().strip(): c for c in df_gastos.columns}
+    rubro_col = col_map.get("RUBRO")
+    quien_paga_col = col_map.get("QUIEN PAGA")
+    valor_col = col_map.get("VALOR")
+    fecha_col = col_map.get("FECHA")
+
+    if not rubro_col or not quien_paga_col or not valor_col:
+        return {
+            "is_paid": False,
+            "total_paid": 0.0,
+            "fechas": [],
+            "count": 0
+        }
+
+    # Asegurar serie datetime para filtrado de año y mes
+    if "FECHA_DT" in df_gastos.columns and pd.api.types.is_datetime64_any_dtype(df_gastos["FECHA_DT"]):
+        dt_series = df_gastos["FECHA_DT"]
+    elif fecha_col:
+        try:
+            from services.data_service import safe_parse_dates
+            dt_series = safe_parse_dates(df_gastos[fecha_col])
+        except Exception:
+            dt_series = pd.to_datetime(df_gastos[fecha_col], errors="coerce")
+    else:
+        return {
+            "is_paid": False,
+            "total_paid": 0.0,
+            "fechas": [],
+            "count": 0
+        }
+
+    item_resp = str(item.get("responsable", "")).strip().lower()
+    item_rubro = str(item.get("rubro", "")).strip().lower()
+
+    paga_series = df_gastos[quien_paga_col].fillna("").astype(str).str.strip().str.lower()
+    rubro_series = df_gastos[rubro_col].fillna("").astype(str).str.strip().str.lower()
+
+    # Filtro estricto: año, mes, responsable y rubro
+    mask_date = (dt_series.dt.year == int(target_year)) & (dt_series.dt.month == int(target_month))
+    mask_user = (paga_series == item_resp)
+    mask_rubro = (rubro_series == item_rubro)
+
+    mask = mask_date & mask_user & mask_rubro
+
+    matched = df_gastos[mask]
+    if matched.empty:
+        return {
+            "is_paid": False,
+            "total_paid": 0.0,
+            "fechas": [],
+            "count": 0
+        }
+
+    valores = pd.to_numeric(matched[valor_col], errors="coerce").fillna(0.0)
+    total_pagado = float(valores.sum())
+
+    fechas_list = []
+    if fecha_col:
+        fechas_list = matched[fecha_col].dropna().astype(str).str.strip().tolist()
+
+    return {
+        "is_paid": bool(total_pagado > 0),
+        "total_paid": total_pagado,
+        "fechas": fechas_list,
+        "count": int(len(matched))
+    }
